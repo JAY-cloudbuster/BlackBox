@@ -9,7 +9,7 @@
 
 **Conseal** is a lightning-fast, AI-powered document sanitization platform that automatically detects and redacts Personally Identifiable Information (PII) from PDFs, Images, and Text files while providing a transparent Explainability Engine for human review.
 
-[**Live Demo**](INSERT_DEPLOYMENT_LINK_HERE) • [**Demo Video**](INSERT_VIDEO_LINK_HERE) • [**Project Writeup**](./WRITEUP.md) • [**GitHub Repository**](INSERT_GITHUB_LINK_HERE)
+[**Live Demo**](https://black-box-dun-iota.vercel.app/) • [**Demo Video**](INSERT_VIDEO_LINK_HERE) • [**Project Writeup**](./WRITEUP.md) • [**GitHub Repository**](INSERT_GITHUB_LINK_HERE)
 
 </div>
 
@@ -20,7 +20,7 @@
 Judges, welcome to the Conseal repository! You can find all required submission materials linked below for easy access:
 
 - **🔗 Public GitHub Repository:** [View on GitHub](INSERT_GITHUB_LINK_HERE)
-- **🚀 Live Deployment:** [Frontend (Vercel) & Backend (Render)](INSERT_DEPLOYMENT_LINK_HERE)
+- **🚀 Live Deployment:** [Frontend (Vercel) & Backend (Render)](https://black-box-dun-iota.vercel.app/)
 - **🎥 Demo Video:** [Watch the Experience in Action](INSERT_VIDEO_LINK_HERE)
 - **📝 Project Writeup:** [Read the ~Half-Page Writeup](./WRITEUP.md) (Details on what we built vs. what we excluded)
 - **💻 Runnable Source Code:** Setup instructions provided below.
