@@ -858,11 +858,15 @@ app.post('/api/documents/:id/export', async (req, res) => {
       }
 
       const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-      // Force it to use its OWN fake worker so it doesn't collide with pdf-parse's newer worker version
-      pdfjsLib.GlobalWorkerOptions.workerSrc = require('path').resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.js');
+      // Fix: Disable the worker to prevent version collision with pdf-parse's internal pdfjs version
+      pdfjsLib.GlobalWorkerOptions.disableWorker = true;
+      const fontPath = require('path').resolve(__dirname, 'node_modules/pdfjs-dist/standard_fonts/') + '/';
 
       async function extractPositionedText(pdfBuffer) {
-        const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+        const loadingTask = pdfjsLib.getDocument({ 
+          data: pdfBuffer,
+          standardFontDataUrl: fontPath
+        });
         const pdfDocument = await loadingTask.promise;
         const pages = [];
 
@@ -1052,6 +1056,14 @@ app.post('/api/documents/:id/export', async (req, res) => {
             console.warn(`Warning: Could not find matching text run in PDF for entity ID ${entity.id} ("${entity.text}") at occurrence ${occurrenceIndex}. Skipping visual redaction.`);
           }
         }
+
+        // Security Fix: Strip all interactive annotations (hyperlinks, form fields) from the final redacted PDF
+        const { PDFName } = require('pdf-lib');
+        pdfDoc.getPages().forEach(page => {
+          if (page.node.Annots()) {
+            page.node.delete(PDFName.of('Annots'));
+          }
+        });
 
         const pdfBytes = await pdfDoc.save();
         res.setHeader('Content-Type', 'application/pdf');

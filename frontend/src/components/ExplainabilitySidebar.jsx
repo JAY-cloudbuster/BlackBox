@@ -24,18 +24,90 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
     )
   }
 
+  const [selectedFlags, setSelectedFlags] = useState(new Set());
+
+  const handleToggleFlag = (id) => {
+    const newSet = new Set(selectedFlags);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedFlags(newSet);
+  };
+
+  const handleBulkDelete = () => {
+    selectedFlags.forEach(id => {
+      setOverride(id, 'show');
+    });
+    setSelectedFlags(new Set());
+  };
+
   if (!activeSpan) {
     return (
-      <aside className="explain-sidebar">
+      <aside className="explain-sidebar" style={{ display: 'flex', flexDirection: 'column' }}>
         <div className="sidebar-header">
           <h3>Explainability Engine</h3>
           <p>Document Analysis Complete</p>
         </div>
-        <div className="sidebar-content">
+        <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
           <SummaryPanel doc={doc} />
-          <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center'}}>
-            Click any highlighted entity in the document to see why the AI flagged it and manage overrides.
-          </p>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+            <h4 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>All Detected Entities</h4>
+            {selectedFlags.size > 0 && (
+              <button 
+                onClick={handleBulkDelete}
+                className="icon-btn" 
+                style={{ color: 'var(--accent-red)', padding: '0.2rem 0.5rem', fontSize: '0.85rem' }}
+                title="Mark selected as visible (delete redaction)"
+              >
+                <i className="fa-solid fa-trash"></i> Delete Selected
+              </button>
+            )}
+          </div>
+          
+          <div style={{ overflowY: 'auto', flex: 1, paddingRight: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {doc.entities && doc.entities.length === 0 && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', marginTop: '1rem' }}>No entities detected.</p>
+            )}
+            {doc.entities && doc.entities.map(entity => {
+              const isHidden = entity.finalDisplayAction === 'redact';
+              
+              let statusColor = 'var(--text-secondary)';
+              if (isHidden) statusColor = 'var(--accent-red)';
+              else if (entity.finalDisplayAction === 'flag') statusColor = '#f59e0b';
+              else statusColor = '#10b981';
+
+              return (
+                <div key={entity.id} style={{ display: 'flex', alignItems: 'center', padding: '0.5rem', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', borderRadius: '4px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedFlags.has(entity.id)} 
+                    onChange={() => handleToggleFlag(entity.id)}
+                    style={{ marginRight: '0.75rem', cursor: 'pointer' }}
+                  />
+                  <div 
+                    style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} 
+                    onClick={() => {
+                      // Fire a custom event to select the span in App.jsx
+                      // Since we don't have setActiveSpan prop, we can dispatch a custom event
+                      // Or wait! activeSpan is passed, but we don't have a setter for it?
+                      // We can dispatch an event that App.jsx listens to, or just tell the user to click in document.
+                      // Let's fire a custom event just in case App.jsx can listen to it.
+                      window.dispatchEvent(new CustomEvent('conseal:select-entity', { detail: entity }));
+                    }}
+                  >
+                    <div style={{ fontWeight: '500', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={entity.text}>
+                      {entity.text}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: statusColor, display: 'flex', gap: '0.5rem' }}>
+                      <span>{entity.entityType}</span>
+                      <span>•</span>
+                      <span>{isHidden ? 'Redacted' : (entity.finalDisplayAction === 'flag' ? 'Flagged' : 'Visible')}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </aside>
     )

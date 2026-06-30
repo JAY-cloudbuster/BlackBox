@@ -29,6 +29,15 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
+  // Listen to custom event from sidebar list
+  useEffect(() => {
+    const handleSelect = (e) => {
+      setActiveSpan(e.detail);
+    };
+    window.addEventListener('conseal:select-entity', handleSelect);
+    return () => window.removeEventListener('conseal:select-entity', handleSelect);
+  }, []);
+
   // Rehydrate from URL on mount
   useEffect(() => {
     if (docIdFromUrl) {
