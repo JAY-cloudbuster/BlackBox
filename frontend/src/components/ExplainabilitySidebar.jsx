@@ -47,7 +47,7 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
           <h3>Explainability Engine</h3>
           <p>Document Analysis Complete</p>
         </div>
-        <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        <div className="sidebar-content hide-scrollbar" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           <SummaryPanel doc={doc} />
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', marginBottom: '0.5rem' }}>
@@ -64,7 +64,7 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
             )}
           </div>
           
-          <div style={{ overflowY: 'auto', flex: 1, paddingRight: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {doc.entities && doc.entities.length === 0 && (
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textAlign: 'center', marginTop: '1rem' }}>No entities detected.</p>
             )}

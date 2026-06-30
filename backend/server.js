@@ -99,10 +99,24 @@ Step 3 — When in doubt between Ambiguous and Visible for a name or organizatio
 5. PUBLIC-INFORMATION REASONING:
 If the sentence containing an entity is making a factual, neutral statement about a company, organization, or location's well-known status (industry, headquarters, public role) rather than connecting it to a private individual's personal circumstances, lean toward Visible. If you are uncertain whether something is public information, prefer Ambiguous (flag for human review) over Critical — humans reviewing a flagged-but-visible item is a much smaller cost than the system implying something is dangerous when it isn't, and far smaller than hiding something that didn't need hiding.
 
-6. SELF-CHECK INSTRUCTION:
+6. EXAMPLES:
+Example 1 (Label vs Value):
+Input: "The patient's SSN: 123-45-6789 was verified."
+Correct Entity: {"text": "123-45-6789", "entityType": "SSN", "layer": "critical", "defaultAction": "redact", "reasoning": "Actual SSN data value."} (Do NOT include "SSN:")
+
+Example 2 (Relational Context):
+Input: "Her manager John Doe (jdoe@corp.com) approved the leave."
+Correct Entity 1: {"text": "John Doe", "entityType": "NAME", "layer": "ambiguous", "defaultAction": "flag", "reasoning": "Manager name with contact info nearby."}
+Correct Entity 2: {"text": "jdoe@corp.com", "entityType": "EMAIL", "layer": "critical", "defaultAction": "redact", "reasoning": "Email address."}
+
+Example 3 (Public Company):
+Input: "The software is hosted on Amazon Web Services."
+Correct Entity: {"text": "Amazon Web Services", "entityType": "ORG", "layer": "visible", "defaultAction": "show", "reasoning": "Public company mentioned as a vendor."}
+
+7. SELF-CHECK INSTRUCTION:
 Before finalizing each entity in your output, re-read the exact substring your startIndex/endIndex will produce. Confirm internally: does this substring contain the actual sensitive value, or did I accidentally capture a label, a partial word, or surrounding punctuation? Adjust startIndex/endIndex if needed so the captured substring is precisely the sensitive data and nothing else.
 
-6. Output ONLY raw JSON matching the exact schema above. Any deviation will cause a system crash.`;
+8. Output ONLY raw JSON matching the exact schema above. Any deviation will cause a system crash.`;
 
 // NEW Step 0: Resolve LLM Index Hallucinations computationally
 function resolveIndexHallucinations(rawText, entities) {
@@ -350,87 +364,209 @@ function calibrateEntityLayer(entity) {
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
-async function fetchGroqAnalysis(text, retryCount = 0) {
+const withTimeout = (promise, ms) => {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const err = new Error("timeout");
+      err.code = "timeout";
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([
+    promise.finally(() => clearTimeout(timeoutId)),
+    timeoutPromise
+  ]);
+};
+
+// 1. Unconditional Deterministic Regex Extraction
+function runDeterministicExtraction(rawText) {
+  const entities = [];
+  
+  // EMAIL
+  const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  let match;
+  while ((match = emailRegex.exec(rawText)) !== null) {
+    const isPublic = /(support|info|contact|sales|hello|help)@/i.test(match[0]);
+    entities.push({
+      text: match[0],
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+      entityType: "EMAIL",
+      layer: isPublic ? "visible" : "critical",
+      confidenceScore: 100,
+      reasoning: isPublic ? "Public-facing email address, defaulted to visible." : "Standard email format detected via regex, categorized as critical.",
+      defaultAction: isPublic ? "show" : "redact"
+    });
+  }
+
+  // PHONE (US & International loose regex)
+  const phoneRegex = /(?:\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g;
+  while ((match = phoneRegex.exec(rawText)) !== null) {
+    const text = match[0].trim();
+    const startIndex = match.index + match[0].indexOf(text);
+    entities.push({
+      text: text,
+      startIndex: startIndex,
+      endIndex: startIndex + text.length,
+      entityType: "PHONE",
+      layer: "critical",
+      confidenceScore: 100,
+      reasoning: "Standard phone number format detected via regex.",
+      defaultAction: "redact"
+    });
+  }
+
+  // URL
+  const urlRegex = /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/gi;
+  while ((match = urlRegex.exec(rawText)) !== null) {
+    entities.push({
+      text: match[0],
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+      entityType: "URL",
+      layer: "visible",
+      confidenceScore: 100,
+      reasoning: "URL detected via regex. Defaulted to visible as most URLs are public.",
+      defaultAction: "show"
+    });
+  }
+
+  // DATE
+  const dateRegex = /\b(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})\b/gi;
+  while ((match = dateRegex.exec(rawText)) !== null) {
+    entities.push({
+      text: match[0],
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+      entityType: "DATE",
+      layer: "ambiguous",
+      confidenceScore: 100,
+      reasoning: "Date format detected via regex. Defaulted to ambiguous for human review.",
+      defaultAction: "flag"
+    });
+  }
+
+  return entities;
+}
+
+// 2. Pass A: Enumeration
+async function fetchGroqEnumeration(text) {
+  const prompt = `You are a PII extraction engine. Scan the document and list EVERY substring that could be a NAME, ORG, ADDRESS, ROLE, ID_NUMBER, PASSWORD, or OTHER sensitive value. 
+Do NOT include emails, phone numbers, URLs, or dates (those are handled elsewhere).
+Rules:
+- Output exactly one item per line.
+- Output ONLY the exact substring from the text.
+- Do not add bullet points, numbering, or explanations.
+- If nothing is found, return an empty string.`;
+
+  const makeRequest = async () => groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: text }
+    ],
+    model: 'llama-3.1-8b-instant',
+    temperature: 0.1,
+    max_tokens: 2000
+  });
+
+  try {
+    const chatCompletion = await withTimeout(makeRequest(), 30000);
+    return chatCompletion.choices[0].message.content.split('\n').map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('-'));
+  } catch (error) {
+    console.error("Pass A (Enumeration) failed:", error.message);
+    return []; 
+  }
+}
+
+// 3. Pass B: Classification
+async function fetchGroqClassification(text, candidates, regexEntities, retryCount = 0) {
+  if (candidates.length === 0 && regexEntities.length === 0) return [];
+
   let prompt = baseSystemPrompt;
-  if (retryCount > 0) {
-    prompt += "\n\nCRITICAL REMINDER: Your previous response failed schema validation. You MUST respond with ONLY valid JSON perfectly matching the schema. Do not wrap in markdown.";
-  }
+  if (retryCount > 0) prompt += "\n\nCRITICAL REMINDER: Your previous response failed schema validation. You MUST respond with ONLY valid JSON perfectly matching the schema. Do not wrap in markdown.";
 
-  // Truncate extremely long documents to avoid hitting Groq output token limits
-  let inputText = text;
-  if (inputText.length > 12000) {
-    console.log(`Document text truncated from ${inputText.length} to 12000 chars for LLM analysis.`);
-    inputText = inputText.substring(0, 12000);
-  }
+  const userContent = `DOCUMENT TEXT:\n${text}\n\nCANDIDATES TO CLASSIFY (Found by previous passes):\n${candidates.join('\n')}\n${regexEntities.map(e => e.text).join('\n')}\n\nClassify these candidates based on the rules. Return the JSON object with the "entities" array.`;
 
-  const makeRequest = async () => {
-    return await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: inputText }
-      ],
-      model: 'llama-3.1-8b-instant',
-      temperature: 0.1,
-      max_tokens: 2000,
-      response_format: { type: 'json_object' }
-    });
-  };
-
-  const withTimeout = (promise, ms) => {
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => {
-        const err = new Error("timeout");
-        err.code = "timeout";
-        reject(err);
-      }, ms);
-    });
-    return Promise.race([
-      promise.finally(() => clearTimeout(timeoutId)),
-      timeoutPromise
-    ]);
-  };
+  const makeRequest = async () => groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: userContent }
+    ],
+    model: 'llama-3.1-8b-instant',
+    temperature: 0.1,
+    max_tokens: 2000,
+    response_format: { type: 'json_object' }
+  });
 
   try {
     const chatCompletion = await withTimeout(makeRequest(), 60000);
-    return chatCompletion.choices[0].message.content;
+    const parsed = JSON.parse(chatCompletion.choices[0].message.content);
+    return parsed.entities || [];
   } catch (error) {
-    if (error.code === 'timeout') {
-      throw error;
+    if (retryCount === 0) {
+      console.log("Pass B (Classification) failed, retrying...");
+      await delay(2000);
+      return fetchGroqClassification(text, candidates, regexEntities, 1);
+    }
+    console.error("Pass B failed after retry:", error.message);
+    if (error.code === 'timeout' || error.status === 429) throw error; // bubble up critical errors
+    return [];
+  }
+}
+
+// 4. Completeness Sweep
+async function fetchGroqCompleteness(text, currentEntities) {
+  const currentList = currentEntities.map(e => e.text).join('\n');
+  const prompt = `You are a strict QA auditor. Review the document and the list of already-found entities. Are there any NAMES, ORGS, ADDRESSES, or IDs that were MISSED?
+Output a JSON object with a single key "missed" containing an array of strings representing the EXACT missed substrings. If nothing was missed, output {"missed": []}.`;
+
+  const makeRequest = async () => groq.chat.completions.create({
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: `DOCUMENT:\n${text}\n\nALREADY FOUND:\n${currentList}` }
+    ],
+    model: 'llama-3.1-8b-instant',
+    temperature: 0.1,
+    max_tokens: 1000,
+    response_format: { type: 'json_object' }
+  });
+
+  try {
+    const chatCompletion = await withTimeout(makeRequest(), 30000);
+    const parsed = JSON.parse(chatCompletion.choices[0].message.content);
+    return parsed.missed || [];
+  } catch (error) {
+    console.error("Completeness Sweep failed:", error.message);
+    return [];
+  }
+}
+
+// Document Chunking Logic
+function chunkDocumentWithOverlap(text, chunkSize = 3000, overlap = 300) {
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = i + chunkSize;
+    if (end >= text.length) {
+      chunks.push({ text: text.substring(i), offset: i });
+      break;
     }
     
-    // Check if it's a 400 json_validate_failed error (LLM ran out of tokens)
-    if (error.status === 400 && error.message && error.message.includes('json_validate_failed')) {
-      console.log("Groq returned 400 json_validate_failed — document may be too complex. Retrying...");
-      try {
-        const retryCompletion = await withTimeout(makeRequest(), 20000);
-        return retryCompletion.choices[0].message.content;
-      } catch (retryError) {
-        const err = new Error("Document is too complex for AI analysis. Try a shorter or simpler document.");
-        err.code = "json_validate_failed";
-        throw err;
-      }
+    let breakPoint = end;
+    while (breakPoint > i && !/\s/.test(text[breakPoint])) {
+      breakPoint--;
     }
-
-    // Check if it's a 429 rate limit error
-    if (error.status === 429 || (error.message && error.message.includes('429'))) {
-      console.log("Rate limited (429) by Groq. Waiting 2s before retry...");
-      await delay(2000);
-      try {
-        const retryCompletion = await withTimeout(makeRequest(), 15000);
-        return retryCompletion.choices[0].message.content;
-      } catch (retryError) {
-        if (retryError.status === 429 || (retryError.message && retryError.message.includes('429'))) {
-          const err = new Error("rate_limited");
-          err.code = "rate_limited";
-          throw err;
-        }
-        if (retryError.code === 'timeout') throw retryError;
-        throw retryError;
-      }
+    if (breakPoint === i) breakPoint = end;
+    
+    chunks.push({ text: text.substring(i, breakPoint), offset: i });
+    
+    i = breakPoint - overlap;
+    if (i <= chunks[chunks.length-1].offset) {
+        i = breakPoint;
     }
-    throw error;
   }
+  return chunks;
 }
 
 async function processDocumentText(text, sourceFilename = null, fileData = null) {
@@ -441,24 +577,94 @@ async function processDocumentText(text, sourceFilename = null, fileData = null)
     throw { status: 400, code: 'payload_too_large', message: "Document text exceeds the 50,000 character limit." };
   }
 
-  console.log("Analyzing document with Groq LLM...");
-  let llmResponse;
-  let parsedData;
+  console.log("Analyzing document with multi-pass Groq LLM pipeline...");
+  let parsedData = { plainTextDocument: text, entities: [] };
   let latencyMs = 0;
   
   try {
     const start = Date.now();
-    llmResponse = await fetchGroqAnalysis(text);
-    latencyMs = Date.now() - start;
-    try {
-      parsedData = JSON.parse(llmResponse);
-      documentSchema.parse(parsedData);
-    } catch (e) {
-      console.log("Validation failed on first attempt, retrying schema enforcement...");
-      llmResponse = await fetchGroqAnalysis(text, 1);
-      parsedData = JSON.parse(llmResponse);
-      documentSchema.parse(parsedData); 
+    const chunks = chunkDocumentWithOverlap(text);
+    const allEntities = [];
+    let activePromises = [];
+    const concurrencyLimit = 3;
+
+    for (const chunk of chunks) {
+      const p = (async () => {
+        const regexEnts = runDeterministicExtraction(chunk.text);
+        const candidates = await fetchGroqEnumeration(chunk.text);
+        const chunkClassified = await fetchGroqClassification(chunk.text, candidates, regexEnts);
+        return chunkClassified.map(e => ({
+          ...e,
+          startIndex: e.startIndex + chunk.offset,
+          endIndex: e.endIndex + chunk.offset
+        }));
+      })();
+      
+      activePromises.push(p);
+      if (activePromises.length >= concurrencyLimit) {
+        const results = await Promise.all(activePromises);
+        results.forEach(res => allEntities.push(...res));
+        activePromises = [];
+      }
     }
+    
+    if (activePromises.length > 0) {
+      const results = await Promise.all(activePromises);
+      results.forEach(res => allEntities.push(...res));
+    }
+
+    // Deduplicate exact spans
+    const seenSpans = new Set();
+    const deduplicated = [];
+    for (const e of allEntities) {
+      const key = `${e.startIndex}-${e.endIndex}-${e.text}`;
+      if (!seenSpans.has(key)) {
+        seenSpans.add(key);
+        deduplicated.push(e);
+      }
+    }
+    
+    // Completeness sweep
+    const missedTexts = await fetchGroqCompleteness(text, deduplicated);
+    if (missedTexts.length > 0) {
+       console.log(`Completeness sweep found ${missedTexts.length} missed entities. Classifying them...`);
+       const extraClassified = await fetchGroqClassification(text, missedTexts, []);
+       deduplicated.push(...extraClassified);
+    }
+    
+    parsedData.entities = deduplicated;
+    latencyMs = Date.now() - start;
+    
+    // Normalize entity types before Zod schema validation
+    function normalizeEntityType(type) {
+      if (!type) return "OTHER";
+      const t = type.toUpperCase().trim();
+      const validTypes = ["NAME", "EMAIL", "PHONE", "URL", "ORG", "ADDRESS", "ROLE", "SSN", "ACCOUNT_NUMBER", "CARD_NUMBER", "ID_NUMBER", "DATE", "PASSWORD", "OTHER"];
+      if (validTypes.includes(t)) return t;
+      if (t.includes("MAIL")) return "EMAIL";
+      if (t.includes("PHONE") || t.includes("TEL") || t.includes("MOB")) return "PHONE";
+      if (t.includes("ORG") || t.includes("COMP") || t.includes("BUSI")) return "ORG";
+      if (t.includes("ADDR") || t.includes("LOC")) return "ADDRESS";
+      if (t.includes("ROLE") || t.includes("TITLE") || t.includes("JOB")) return "ROLE";
+      if (t.includes("SOCIAL") || t.includes("SSN")) return "SSN";
+      if (t.includes("ACCT") || t.includes("ACCOUNT")) return "ACCOUNT_NUMBER";
+      if (t.includes("CARD") || t.includes("CREDIT")) return "CARD_NUMBER";
+      if (t.includes("ID") || t.includes("IDENT")) return "ID_NUMBER";
+      if (t.includes("DATE") || t.includes("DOB")) return "DATE";
+      if (t.includes("PASS")) return "PASSWORD";
+      if (t.includes("NAME") || t.includes("PERSON")) return "NAME";
+      if (t.includes("WEB") || t.includes("URL") || t.includes("LINK")) return "URL";
+      return "OTHER";
+    }
+
+    parsedData.entities = parsedData.entities.map(e => ({
+      ...e,
+      id: e.id || crypto.randomUUID(),
+      entityType: normalizeEntityType(e.entityType)
+    }));
+
+    // Schema enforcement for the final merged payload
+    documentSchema.parse(parsedData);
   } catch (llmError) {
     require('fs').writeFileSync('groq_error_log.txt', llmError.stack || llmError.message || String(llmError));
     console.error("Groq Engine Error:", llmError.message);
@@ -471,33 +677,6 @@ async function processDocumentText(text, sourceFilename = null, fileData = null)
 
   const docId = crypto.randomUUID();
   insertDocument(docId, parsedData.plainTextDocument, sourceFilename, latencyMs, fileData ? fileData.buffer : null, fileData ? fileData.ocrMetadata : null);
-
-  function normalizeEntityType(type) {
-    if (!type) return "OTHER";
-    const t = type.toUpperCase().trim();
-    const validTypes = ["NAME", "EMAIL", "PHONE", "URL", "ORG", "ADDRESS", "ROLE", "SSN", "ACCOUNT_NUMBER", "CARD_NUMBER", "ID_NUMBER", "DATE", "PASSWORD", "OTHER"];
-    if (validTypes.includes(t)) return t;
-    if (t.includes("MAIL")) return "EMAIL";
-    if (t.includes("PHONE") || t.includes("TEL") || t.includes("MOB")) return "PHONE";
-    if (t.includes("ORG") || t.includes("COMP") || t.includes("BUSI")) return "ORG";
-    if (t.includes("ADDR") || t.includes("LOC")) return "ADDRESS";
-    if (t.includes("ROLE") || t.includes("TITLE") || t.includes("JOB")) return "ROLE";
-    if (t.includes("SOCIAL") || t.includes("SSN")) return "SSN";
-    if (t.includes("ACCT") || t.includes("ACCOUNT")) return "ACCOUNT_NUMBER";
-    if (t.includes("CARD") || t.includes("CREDIT")) return "CARD_NUMBER";
-    if (t.includes("ID") || t.includes("IDENT")) return "ID_NUMBER";
-    if (t.includes("DATE") || t.includes("DOB")) return "DATE";
-    if (t.includes("PASS")) return "PASSWORD";
-    if (t.includes("NAME") || t.includes("PERSON")) return "NAME";
-    if (t.includes("WEB") || t.includes("URL") || t.includes("LINK")) return "URL";
-    return "OTHER";
-  }
-
-  parsedData.entities = parsedData.entities.map(e => ({
-    ...e,
-    id: crypto.randomUUID(),
-    entityType: normalizeEntityType(e.entityType)
-  }));
 
   // NEW Pipeline Step 0: Fix LLM Index Hallucinations
   parsedData.entities = resolveIndexHallucinations(text, parsedData.entities);

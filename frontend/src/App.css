@@ -253,6 +253,15 @@ CHANGELOG - UX Review & Polish (Step 1):
   border: 1px solid var(--visible-accent);
 }
 
+/* Hide scrollbar for cleaner UI */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .document-body {
   padding: 2rem;
   overflow-y: auto;
@@ -861,6 +870,155 @@ CHANGELOG - UX Review & Polish (Step 1):
 
 .pdf-entity-bar__header i {
   color: var(--accent-primary);
+}
+/* --- DocumentInput Visual Upgrades --- */
+
+/* 1. Grid Matrix Background */
+.app-container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 30px 30px;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.5;
+}
+
+/* 2. Hero Typography */
+.hero-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  margin-top: 2rem;
+}
+.hero-title {
+  font-family: var(--font-heading);
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  margin: 0 0 1rem 0;
+  background: linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-subtitle {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+/* 3. AI Aura Glow */
+.ai-aura-container {
+  position: relative;
+  width: 100%;
+}
+.ai-aura-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, rgba(56, 189, 248, 0.1) 40%, transparent 70%);
+  transform: translate(-50%, -50%);
+  filter: blur(40px);
+  z-index: -1;
+  pointer-events: none;
+  animation: aura-breathe 8s ease-in-out infinite;
+}
+@keyframes aura-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+  50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+}
+
+/* 4. Sliding Pill Segmented Control */
+.sliding-pill-container {
+  display: flex;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 50px;
+  padding: 4px;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
+  border: 1px solid var(--border-glass);
+}
+.sliding-pill-highlight {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: calc(33.333% - 2.66px);
+  background: var(--accent-primary);
+  border-radius: 50px;
+  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.sliding-pill-tab {
+  flex: 1;
+  text-align: center;
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  transition: color 0.3s ease;
+  border-radius: 50px;
+}
+.sliding-pill-tab.active {
+  color: #fff;
+}
+
+/* 5. Magnetic Drag & Drop */
+.dropzone-animated {
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  position: relative;
+  overflow: hidden;
+}
+.dropzone-animated.dragover {
+  transform: scale(1.02);
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: var(--accent-primary) !important;
+}
+.dropzone-animated.dragover::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border: 2px dashed var(--accent-primary);
+  border-radius: inherit;
+  animation: marching-ants 1s linear infinite;
+  pointer-events: none;
+}
+.dropzone-icon {
+  font-size: 3rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  transition: color 0.3s;
+}
+.dropzone-animated:hover .dropzone-icon, .dropzone-animated.dragover .dropzone-icon {
+  color: var(--accent-primary);
+  animation: levitate 2s ease-in-out infinite;
+}
+
+@keyframes marching-ants {
+  0% { background-position: 0 0; }
+  100% { background-position: 20px 20px; } /* Assuming linear gradient dashed borders, but standard dashed works fine if we just pulse it. Actually marching ants is complex without SVGs. Let's just pulse it. */
+}
+/* Refined marching ants (pulse for simplicity and elegance) */
+.dropzone-animated.dragover::before {
+  animation: dropzone-pulse 1.5s infinite;
+}
+@keyframes dropzone-pulse {
+  0% { box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0); }
+  50% { box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.5); }
+  100% { box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0); }
+}
+@keyframes levitate {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
 .pdf-entity-bar__count {

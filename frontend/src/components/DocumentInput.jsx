@@ -8,6 +8,7 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
   
   const [loadingStep, setLoadingStep] = useState(null); // 'extracting' | 'analyzing'
   const [error, setError] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   
   const fileInputRef = useRef(null);
 
@@ -61,8 +62,19 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
     }
   };
 
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
+    setIsDragOver(false);
     const dropped = e.dataTransfer.files[0];
     if (!dropped) return;
     
@@ -101,71 +113,66 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
   };
 
   return (
-    <div className="document-input-container explain-card">
-      <div className="sidebar-header" style={{borderRadius: 0, display: 'flex', gap: '1rem', alignItems: 'center'}}>
-        <div 
-          onClick={() => !loadingStep && setMode('text')}
-          style={{
-            cursor: loadingStep ? 'not-allowed' : 'pointer', 
-            padding: '0.5rem 1rem', 
-            background: mode === 'text' ? 'rgba(255,255,255,0.1)' : 'transparent', 
-            borderRadius: 0, 
-            fontWeight: mode === 'text' ? '600' : '400',
-            transition: 'all 0.2s'
-          }}
-        >
-          Paste Text
-        </div>
-        <div 
-          onClick={() => { if (!loadingStep) { setMode('pdf'); setFile(null); setError(null); } }}
-          style={{
-            cursor: loadingStep ? 'not-allowed' : 'pointer', 
-            padding: '0.5rem 1rem', 
-            background: mode === 'pdf' ? 'rgba(255,255,255,0.1)' : 'transparent', 
-            borderRadius: 0, 
-            fontWeight: mode === 'pdf' ? '600' : '400',
-            transition: 'all 0.2s'
-          }}
-        >
-          Upload PDF
-        </div>
-        <div 
-          onClick={() => { if (!loadingStep) { setMode('image'); setFile(null); setError(null); } }}
-          style={{
-            cursor: loadingStep ? 'not-allowed' : 'pointer', 
-            padding: '0.5rem 1rem', 
-            background: mode === 'image' ? 'rgba(255,255,255,0.1)' : 'transparent', 
-            borderRadius: 0, 
-            fontWeight: mode === 'image' ? '600' : '400',
-            transition: 'all 0.2s'
-          }}
-        >
-          Upload Image
-        </div>
-        
-        <div style={{flex: 1}}></div>
-        
-        <button 
-          onClick={handleTryExample}
-          disabled={!!loadingStep}
-          style={{
-            background: 'var(--accent-primary)',
-            color: '#fff',
-            border: 'none',
-            padding: '0.5rem 1rem',
-            borderRadius: 0,
-            cursor: loadingStep ? 'not-allowed' : 'pointer',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            opacity: loadingStep ? 0.5 : 1,
-            transition: 'all 0.2s'
-          }}
-        >
-          <i className="fa-solid fa-bolt"></i> Try Example Document
-        </button>
+    <div className="ai-aura-container">
+      <div className="ai-aura-glow"></div>
+      
+      <div className="hero-header">
+        <h1 className="hero-title">Sanitize with Certainty.</h1>
+        <p className="hero-subtitle">Drop a document below. Conseal will detect and redact sensitive PII in milliseconds using advanced AI.</p>
       </div>
+
+      <div className="document-input-container explain-card" style={{ zIndex: 1, position: 'relative' }}>
+        <div style={{ padding: '1.5rem 2rem 0 2rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          
+          <div className="sliding-pill-container" style={{ flex: 1, minWidth: '300px' }}>
+            <div 
+              className="sliding-pill-highlight" 
+              style={{ 
+                transform: `translateX(${mode === 'text' ? '0%' : mode === 'pdf' ? '100%' : '200%'})` 
+              }}
+            ></div>
+            <div 
+              className={`sliding-pill-tab ${mode === 'text' ? 'active' : ''}`}
+              onClick={() => !loadingStep && setMode('text')}
+            >
+              Paste Text
+            </div>
+            <div 
+              className={`sliding-pill-tab ${mode === 'pdf' ? 'active' : ''}`}
+              onClick={() => { if (!loadingStep) { setMode('pdf'); setFile(null); setError(null); } }}
+            >
+              Upload PDF
+            </div>
+            <div 
+              className={`sliding-pill-tab ${mode === 'image' ? 'active' : ''}`}
+              onClick={() => { if (!loadingStep) { setMode('image'); setFile(null); setError(null); } }}
+            >
+              Upload Image
+            </div>
+          </div>
+          
+          <button 
+            onClick={handleTryExample}
+            disabled={!!loadingStep}
+            style={{
+              background: 'var(--accent-primary)',
+              color: '#fff',
+              border: 'none',
+              padding: '0.6rem 1.2rem',
+              borderRadius: '50px',
+              cursor: loadingStep ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              opacity: loadingStep ? 0.5 : 1,
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }}
+          >
+            <i className="fa-solid fa-bolt"></i> Try Example Document
+          </button>
+        </div>
       <div style={{padding: '2rem'}}>
         {error && (
           <div className="status-box shredded" style={{
@@ -214,9 +221,12 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
         ) : (
           <form onSubmit={handleSubmitFile}>
             <div 
+              className={`dropzone-animated ${isDragOver ? 'dragover' : ''}`}
               onClick={() => !loadingStep && fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
               style={{
                 border: '2px dashed var(--border-glass)', 
                 borderRadius: 0, 
@@ -225,10 +235,9 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
                 cursor: loadingStep ? 'not-allowed' : 'pointer', 
                 background: 'rgba(15,23,42,0.4)', 
                 color: 'var(--text-secondary)',
-                transition: 'all 0.2s ease'
               }}
             >
-              <i className={mode === 'pdf' ? "fa-solid fa-file-pdf" : "fa-solid fa-image"} style={{fontSize: '3rem', color: file ? 'var(--accent-primary)' : 'var(--text-secondary)', marginBottom: '1rem'}}></i>
+              <i className={`${mode === 'pdf' ? "fa-solid fa-file-pdf" : "fa-solid fa-image"} dropzone-icon`} style={{ color: file ? 'var(--accent-primary)' : '' }}></i>
               <h3 style={{color: 'var(--text-primary)'}}>{file ? file.name : (mode === 'pdf' ? 'Drag & Drop or Click to Select PDF' : 'Drag & Drop or Click to Select Image')}</h3>
               <p style={{fontSize: '0.875rem', marginTop: '1rem', color: 'var(--text-secondary)', lineHeight: 1.5}}>
                 {mode === 'pdf' 
@@ -262,6 +271,7 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
             </div>
           </form>
         )}
+      </div>
       </div>
     </div>
   );
