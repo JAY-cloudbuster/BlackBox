@@ -2,6 +2,7 @@ import React from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import { API_BASE } from '../config';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -258,7 +259,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
                 {renderEntitySummaryBar()}
                 <div className="pdf-pages-container">
                   <Document 
-                    file={`http://localhost:3000/api/documents/${doc.id}/download-original`} 
+                    file={`${API_BASE}/api/documents/${doc.id}/download-original`} 
                     onLoadSuccess={({ numPages }) => setNumPages(numPages)}
                     loading={<div className="pdf-loading">Loading PDF...</div>}
                   >

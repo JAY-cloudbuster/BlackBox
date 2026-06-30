@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 export function useEntityDecisions(initialDoc, showAiOriginal = false) {
   const [userOverrides, setUserOverrides] = useState({});
@@ -34,7 +35,7 @@ export function useEntityDecisions(initialDoc, showAiOriginal = false) {
   const setOverride = useCallback(async (id, action) => {
     setUserOverrides(prev => ({ ...prev, [id]: action }));
     try {
-      await fetch(`http://localhost:3000/api/entities/${id}/override`, {
+      await fetch(`${API_BASE}/api/entities/${id}/override`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action })
@@ -51,7 +52,7 @@ export function useEntityDecisions(initialDoc, showAiOriginal = false) {
       return newState;
     });
     try {
-      await fetch(`http://localhost:3000/api/entities/${id}/override`, {
+      await fetch(`${API_BASE}/api/entities/${id}/override`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'reset' })

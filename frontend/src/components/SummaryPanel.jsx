@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 
 export default function SummaryPanel({ doc }) {
   if (!doc || !doc.entities || doc.entities.length === 0) return null;
@@ -20,7 +21,7 @@ export default function SummaryPanel({ doc }) {
     if (!isAuditOpen && !auditTrail) {
       setLoadingAudit(true);
       try {
-        const res = await fetch(`http://localhost:3000/api/documents/${doc.documentId}/audit-trail`);
+        const res = await fetch(`${API_BASE}/api/documents/${doc.documentId}/audit-trail`);
         const data = await res.json();
         setAuditTrail(data);
       } catch (e) {

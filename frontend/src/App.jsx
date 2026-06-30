@@ -5,6 +5,7 @@ import DocumentInput from './components/DocumentInput'
 import ExportModal from './components/ExportModal'
 import Logo from './components/Logo'
 import { useEntityDecisions } from './hooks/useEntityDecisions'
+import { API_BASE } from './config'
 import './App.css'
 
 function App() {
@@ -32,7 +33,7 @@ function App() {
   useEffect(() => {
     if (docIdFromUrl) {
       setLoading(true);
-      fetch(`http://localhost:3000/api/documents/${docIdFromUrl}`)
+      fetch(`${API_BASE}/api/documents/${docIdFromUrl}`)
         .then(async res => {
           let data;
           try {
@@ -56,7 +57,7 @@ function App() {
   }, [docIdFromUrl]);
 
   const handleAnalyze = async (text) => {
-    const res = await fetch('http://localhost:3000/api/documents', {
+    const res = await fetch(`${API_BASE}/api/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
@@ -86,7 +87,7 @@ function App() {
     const formData = new FormData();
     formData.append('file', file);
     
-    const res = await fetch('http://localhost:3000/api/documents/upload', {
+    const res = await fetch(`${API_BASE}/api/documents/upload`, {
       method: 'POST',
       body: formData
     });

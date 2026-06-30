@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 
 export default function ExportModal({ onClose, docId, userOverrides }) {
   const [loading, setLoading] = useState(null);
@@ -8,7 +9,7 @@ export default function ExportModal({ onClose, docId, userOverrides }) {
     setLoading(format);
     setError(null);
     try {
-      const res = await fetch(`http://localhost:3000/api/documents/${docId}/export`, {
+      const res = await fetch(`${API_BASE}/api/documents/${docId}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ format, overrides: userOverrides })
