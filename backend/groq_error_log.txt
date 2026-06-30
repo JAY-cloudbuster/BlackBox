@@ -1,4 +1,55 @@
-Error: timeout
-    at Timeout._onTimeout (C:\Users\kjaye\Desktop\BlackBox\backend\server.js:381:21)
-    at listOnTimeout (node:internal/timers:605:17)
-    at process.processTimers (node:internal/timers:541:7)
+ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "NAME",
+      "EMAIL",
+      "PHONE",
+      "URL",
+      "ORG",
+      "ADDRESS",
+      "ROLE",
+      "SSN",
+      "ACCOUNT_NUMBER",
+      "CARD_NUMBER",
+      "ID_NUMBER",
+      "DATE",
+      "PASSWORD",
+      "OTHER"
+    ],
+    "path": [
+      "entities",
+      4,
+      "entityType"
+    ],
+    "message": "Invalid option: expected one of \"NAME\"|\"EMAIL\"|\"PHONE\"|\"URL\"|\"ORG\"|\"ADDRESS\"|\"ROLE\"|\"SSN\"|\"ACCOUNT_NUMBER\"|\"CARD_NUMBER\"|\"ID_NUMBER\"|\"DATE\"|\"PASSWORD\"|\"OTHER\""
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "NAME",
+      "EMAIL",
+      "PHONE",
+      "URL",
+      "ORG",
+      "ADDRESS",
+      "ROLE",
+      "SSN",
+      "ACCOUNT_NUMBER",
+      "CARD_NUMBER",
+      "ID_NUMBER",
+      "DATE",
+      "PASSWORD",
+      "OTHER"
+    ],
+    "path": [
+      "entities",
+      7,
+      "entityType"
+    ],
+    "message": "Invalid option: expected one of \"NAME\"|\"EMAIL\"|\"PHONE\"|\"URL\"|\"ORG\"|\"ADDRESS\"|\"ROLE\"|\"SSN\"|\"ACCOUNT_NUMBER\"|\"CARD_NUMBER\"|\"ID_NUMBER\"|\"DATE\"|\"PASSWORD\"|\"OTHER\""
+  }
+]
+    at processDocumentText (C:\Users\kjaye\Desktop\BlackBox\backend\server.js:459:22)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async C:\Users\kjaye\Desktop\BlackBox\backend\server.js:569:20

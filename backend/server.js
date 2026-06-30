@@ -5,6 +5,7 @@ const Groq = require('groq-sdk');
 const { z } = require('zod');
 const crypto = require('crypto');
 const multer = require('multer');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 const docx = require('docx');
 
@@ -728,160 +729,176 @@ app.post('/api/documents/:id/export', async (req, res) => {
     }
     
     if (format === 'pdf') {
-      if (document.original_file) {
-        const groups = {};
-        for (const e of document.entities) {
-          const textVal = e.text;
-          if (!textVal) continue;
-          
-          const normalized = textVal.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
-          if (!groups[normalized]) {
-            groups[normalized] = { value: textVal, type: e.entityType, occurrences: [] };
-          }
-          const override = overrides && overrides[e.id] !== undefined ? overrides[e.id] : null;
-          const finalAction = override !== null ? override : e.defaultAction;
-          groups[normalized].occurrences.push({
-            startIndex: e.startIndex,
-            action: finalAction,
-            type: e.entityType
-          });
-        }
-        
-        const redactionsList = Object.values(groups).map(g => {
-          g.occurrences.sort((a, b) => a.startIndex - b.startIndex);
-          return g;
-        });
-
-        const { execFile } = require('child_process');
-        const path = require('path');
-        const pythonScript = path.join(__dirname, 'redact_pdf.py');
-        
-        const child = execFile('python', [pythonScript, JSON.stringify(redactionsList)], { 
-          encoding: 'buffer',
-          maxBuffer: 50 * 1024 * 1024 
-        }, (error, stdout, stderr) => {
-          if (error) {
-            console.error("Redaction script error:", error);
-            console.error("Stderr:", stderr ? stderr.toString() : '');
-            return res.status(500).json({ error: true, code: 'export_failed', message: "Failed to redact PDF." });
-          }
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-          return res.end(stdout);
-        });
-        
-        child.stdin.on('error', (err) => {
-          console.error("child.stdin write error:", err.message);
-          // Do not send response here if already handled by execFile callback
-        });
-        child.stdin.write(document.original_file);
-        child.stdin.end();
-        return;
+      if (!document.original_file) {
+        return res.status(400).json({ error: true, message: "Original PDF not found in database. Cannot export formatted PDF." });
       }
-      
-      // Fallback for plain-text documents exported to PDF
-      const pdfDoc = await PDFDocument.create();
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const fontSize = 11;
-      const margin = 50;
-      let page = pdfDoc.addPage();
-      const { width, height } = page.getSize();
-      
-      let y = height - margin;
-      let x = margin;
-      
-      const elements = [];
-      for (const token of tokens) {
-        if (token.type === 'pill') {
-          elements.push(token);
-        } else {
-          const lines = token.content.split('\n');
-          for (let i = 0; i < lines.length; i++) {
-            if (i > 0) elements.push({ type: 'newline' });
-            
-            const words = lines[i].split(/(\s+)/);
-            for (const word of words) {
-               if (word.length > 0) elements.push({ type: 'text', content: word });
+
+      const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+
+      async function extractPositionedText(pdfBuffer) {
+        const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+        const pdfDocument = await loadingTask.promise;
+        const pages = [];
+
+        for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+          const page = await pdfDocument.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          const viewport = page.getViewport({ scale: 1 });
+
+          const items = textContent.items.map((item) => ({
+            text: item.str,
+            x: item.transform[4],
+            y: item.transform[5],
+            width: item.width,
+            height: Math.abs(item.transform[3]) || (item.height ?? 10),
+            pageHeight: viewport.height,
+          }));
+
+          pages.push({ pageNumber: pageNum - 1, items, pageHeight: viewport.height, pageWidth: viewport.width });
+        }
+        return pages;
+      }
+
+      function normalizeForMatch(str) {
+        return str.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+      }
+
+      function findEntityItemRun(entityText, pageItems, occurrenceIndex = 0) {
+        const target = normalizeForMatch(entityText);
+        if (!target) return null;
+        const matches = [];
+
+        for (let start = 0; start < pageItems.length; start++) {
+          let accumulated = '';
+          for (let end = start; end < pageItems.length; end++) {
+            accumulated += normalizeForMatch(pageItems[end].text);
+            if (accumulated.length > target.length) break;
+            if (accumulated === target) {
+              matches.push({ startItem: start, endItem: end });
+              break;
             }
           }
         }
+        return matches[occurrenceIndex] || matches[0] || null;
       }
 
-      const pillPadding = 4;
-      
-      const sanitizeWinAnsi = (str) => {
-        if (!str) return '';
-        return str
-          .replace(/[\r\t]/g, ' ')
-          .replace(/[“”]/g, '"')
-          .replace(/[‘’]/g, "'")
-          .replace(/[—–]/g, "-")
-          .replace(/[^\x00-\xFF]/g, '');
-      };
-      
-      for (const el of elements) {
-        if (el.type === 'newline') {
-          x = margin;
-          y -= (fontSize + 6);
-          if (y < margin) {
-            page = pdfDoc.addPage();
-            y = height - margin;
+      try {
+        const extractedPages = await extractPositionedText(document.original_file);
+        const pdfDoc = await PDFDocument.load(document.original_file);
+        const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+        // Group entities by page
+        // Wait, entities don't have page numbers explicitly in the Groq response.
+        // We have to search for them across all pages.
+        // We will maintain a global occurrence counter per normalized text.
+        const occurrenceCounts = {};
+        
+        // Sort entities by startIndex to process them in order of appearance in plain text
+        const sortedEntitiesByStart = [...document.entities].sort((a, b) => a.startIndex - b.startIndex);
+
+        for (const entity of sortedEntitiesByStart) {
+          const userOverride = overrides && overrides[entity.id] !== undefined ? overrides[entity.id] : null;
+          const finalDisplayAction = userOverride !== null ? userOverride : entity.defaultAction;
+          
+          if (finalDisplayAction !== 'redact') {
+            continue; // Draw nothing, leave original text touched
           }
-          continue;
-        }
-        
-        let elWidth = 0;
-        let isSpace = false;
-        if (el.type === 'pill') {
-          el.content = sanitizeWinAnsi(el.content);
-          elWidth = font.widthOfTextAtSize(el.content, fontSize - 1) + (pillPadding * 2);
-        } else {
-          el.content = sanitizeWinAnsi(el.content);
-          elWidth = font.widthOfTextAtSize(el.content, fontSize);
-          isSpace = /^[\s]+$/.test(el.content);
-        }
-        
-        if (x + elWidth > width - margin && x > margin && !isSpace) {
-          x = margin;
-          y -= (fontSize + 6);
-          if (y < margin) {
-            page = pdfDoc.addPage();
-            y = height - margin;
+
+          const target = normalizeForMatch(entity.text);
+          if (!target) continue;
+
+          // Increment global occurrence count
+          if (!occurrenceCounts[target]) occurrenceCounts[target] = 0;
+          const occurrenceIndex = occurrenceCounts[target]++;
+
+          let matchFound = false;
+          let pagesSearchedOccurrence = 0;
+
+          // Search across all pages to find the Nth occurrence
+          for (const pageData of extractedPages) {
+            const pageItems = pageData.items;
+            
+            // Local search on this page to find how many occurrences of target exist here
+            let pageMatches = [];
+            for (let start = 0; start < pageItems.length; start++) {
+              let accumulated = '';
+              for (let end = start; end < pageItems.length; end++) {
+                accumulated += normalizeForMatch(pageItems[end].text);
+                if (accumulated.length > target.length) break;
+                if (accumulated === target) {
+                  pageMatches.push({ startItem: start, endItem: end });
+                  break; // Move to next start
+                }
+              }
+            }
+
+            if (pageMatches.length > 0) {
+              // Does the global occurrenceIndex fall on this page?
+              if (occurrenceIndex >= pagesSearchedOccurrence && occurrenceIndex < pagesSearchedOccurrence + pageMatches.length) {
+                // We found the page and the match on this page
+                const localMatchIndex = occurrenceIndex - pagesSearchedOccurrence;
+                const match = pageMatches[localMatchIndex];
+
+                // Group matched items by line (same y within a small tolerance)
+                const matchedItems = pageItems.slice(match.startItem, match.endItem + 1);
+                const lineGroups = [];
+                let currentGroup = [matchedItems[0]];
+                
+                for (let i = 1; i < matchedItems.length; i++) {
+                  const item = matchedItems[i];
+                  const lastItem = currentGroup[currentGroup.length - 1];
+                  if (Math.abs(item.y - lastItem.y) <= 2) {
+                    currentGroup.push(item);
+                  } else {
+                    lineGroups.push(currentGroup);
+                    currentGroup = [item];
+                  }
+                }
+                lineGroups.push(currentGroup);
+
+                const pdfPage = pdfDoc.getPages()[pageData.pageNumber];
+
+                for (const group of lineGroups) {
+                  const x = Math.min(...group.map(i => i.x));
+                  const y = Math.min(...group.map(i => i.y));
+                  const width = Math.max(...group.map(i => i.x + i.width)) - x;
+                  const height = Math.max(...group.map(i => i.height));
+
+                  // Draw on the loaded original page
+                  pdfPage.drawRectangle({ x, y: y - 2, width, height: height + 4, color: rgb(0.1, 0.1, 0.1) });
+                  
+                  const labelWidth = helveticaFont.widthOfTextAtSize(entity.entityType, Math.min(8, height * 0.7));
+                  const xPos = width > labelWidth + 8 ? x + (width - labelWidth) / 2 : x + 4;
+
+                  pdfPage.drawText(entity.entityType, {
+                    x: xPos,
+                    y: y + height / 4,
+                    size: Math.min(8, height * 0.7),
+                    font: helveticaFont,
+                    color: rgb(1, 1, 1),
+                  });
+                }
+                matchFound = true;
+                break; // Move to next entity
+              }
+              pagesSearchedOccurrence += pageMatches.length;
+            }
+          }
+
+          if (!matchFound) {
+            console.warn(`Warning: Could not find matching text run in PDF for entity ID ${entity.id} ("${entity.text}") at occurrence ${occurrenceIndex}. Skipping visual redaction.`);
           }
         }
-        
-        if (el.type === 'pill') {
-          page.drawRectangle({
-            x: x,
-            y: y - 2,
-            width: elWidth,
-            height: fontSize + 4,
-            color: rgb(0.2, 0.2, 0.2)
-          });
-          page.drawText(el.content, {
-            x: x + pillPadding,
-            y: y,
-            size: fontSize - 1,
-            font: font,
-            color: rgb(1, 1, 1)
-          });
-          x += elWidth;
-        } else {
-          page.drawText(el.content, {
-            x: x,
-            y: y,
-            size: fontSize,
-            font: font,
-            color: rgb(0, 0, 0)
-          });
-          x += elWidth;
-        }
+
+        const pdfBytes = await pdfDoc.save();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.end(Buffer.from(pdfBytes));
+
+      } catch (err) {
+        console.error("PDF generation error:", err);
+        return res.status(500).json({ error: true, code: 'export_failed', message: "Failed to generate redacted PDF: " + err.message });
       }
-      
-      const pdfBytes = await pdfDoc.save();
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      return res.end(Buffer.from(pdfBytes));
     }
     
     if (format === 'docx') {
