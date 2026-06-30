@@ -734,6 +734,8 @@ app.post('/api/documents/:id/export', async (req, res) => {
       }
 
       const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+      // Force it to use its OWN fake worker so it doesn't collide with pdf-parse's newer worker version
+      pdfjsLib.GlobalWorkerOptions.workerSrc = require('path').resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.js');
 
       async function extractPositionedText(pdfBuffer) {
         const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
@@ -864,15 +866,21 @@ app.post('/api/documents/:id/export', async (req, res) => {
                   const width = Math.max(...group.map(i => i.x + i.width)) - x;
                   const height = Math.max(...group.map(i => i.height));
 
+                  // Adjust y downwards to cover descenders (g, y, p, j, q) which hang below the baseline.
+                  // pdfjs-dist transform[5] (our 'y') is the text baseline. 
+                  const descenderPadding = height * 0.25; 
+                  const boxY = y - descenderPadding;
+                  const boxHeight = height * 1.3; // total height to cover ascenders and descenders
+
                   // Draw on the loaded original page
-                  pdfPage.drawRectangle({ x, y: y - 2, width, height: height + 4, color: rgb(0.1, 0.1, 0.1) });
+                  pdfPage.drawRectangle({ x, y: boxY, width, height: boxHeight, color: rgb(0.1, 0.1, 0.1) });
                   
                   const labelWidth = helveticaFont.widthOfTextAtSize(entity.entityType, Math.min(8, height * 0.7));
                   const xPos = width > labelWidth + 8 ? x + (width - labelWidth) / 2 : x + 4;
 
                   pdfPage.drawText(entity.entityType, {
                     x: xPos,
-                    y: y + height / 4,
+                    y: boxY + (boxHeight / 2) - (Math.min(8, height * 0.7) / 2.5), // visually centered vertically
                     size: Math.min(8, height * 0.7),
                     font: helveticaFont,
                     color: rgb(1, 1, 1),

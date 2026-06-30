@@ -120,42 +120,6 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
               </div>
             </div>
 
-            <div className="override-section" style={{marginTop: '2rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem'}}>
-              <h4>User Override Controls</h4>
-              <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
-                Manually override the AI's layer classification.
-              </p>
-              <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
-                <button 
-                  className={`primary-btn ${activeSpan.finalDisplayAction === 'redact' ? 'active-override' : 'inactive-override'}`}
-                  onClick={() => setOverride(activeSpan.id, 'redact')}
-                  disabled={previewMode}
-                  style={{flex: 1, justifyContent: 'center'}}
-                  aria-label="Hide this entity"
-                >
-                  <i className="fa-solid fa-eye-slash"></i> Hide This
-                </button>
-                <button 
-                  className={`primary-btn ${activeSpan.finalDisplayAction !== 'redact' ? 'active-override' : 'inactive-override'}`}
-                  onClick={() => setOverride(activeSpan.id, 'show')}
-                  disabled={previewMode}
-                  style={{flex: 1, justifyContent: 'center'}}
-                  aria-label="Show this entity"
-                >
-                  <i className="fa-solid fa-eye"></i> Show This
-                </button>
-                {activeSpan.isModified && (
-                  <button 
-                    className="primary-btn"
-                    onClick={() => resetOverride(activeSpan.id)}
-                    disabled={previewMode}
-                    style={{width: '100%', marginTop: '0.5rem', background: 'transparent', border: '1px solid var(--border-glass)', color: 'var(--text-primary)'}}
-                  >
-                    <i className="fa-solid fa-rotate-left"></i> Reset to AI Suggestion
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         )}
 
@@ -191,6 +155,43 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
             </div>
           </div>
         )}
+
+        <div className="override-section" style={{marginTop: '2rem', borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem'}}>
+          <h4>User Override Controls</h4>
+          <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>
+            Manually override the AI's layer classification.
+          </p>
+          <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
+            <button 
+              className={`primary-btn ${activeSpan.finalDisplayAction === 'redact' ? 'active-override' : 'inactive-override'}`}
+              onClick={() => setOverride(activeSpan.id, 'redact')}
+              disabled={previewMode}
+              style={{flex: 1, justifyContent: 'center'}}
+              aria-label="Hide this entity"
+            >
+              <i className="fa-solid fa-eye-slash"></i> Hide This
+            </button>
+            <button 
+              className={`primary-btn ${activeSpan.finalDisplayAction !== 'redact' ? 'active-override' : 'inactive-override'}`}
+              onClick={() => setOverride(activeSpan.id, 'show')}
+              disabled={previewMode}
+              style={{flex: 1, justifyContent: 'center'}}
+              aria-label="Show this entity"
+            >
+              <i className="fa-solid fa-eye"></i> Show This
+            </button>
+            {activeSpan.isModified && (
+              <button 
+                className="primary-btn"
+                onClick={() => resetOverride(activeSpan.id)}
+                disabled={previewMode}
+                style={{width: '100%', marginTop: '0.5rem', background: 'transparent', border: '1px solid var(--border-glass)', color: 'var(--text-primary)'}}
+              >
+                <i className="fa-solid fa-rotate-left"></i> Reset to AI Suggestion
+              </button>
+            )}
+          </div>
+        </div>
 
         <div className="sidebar-tabs" style={{ display: 'flex', borderTop: '1px solid var(--border-glass)', marginTop: '2rem', paddingTop: '0.5rem' }}>
           <button 
