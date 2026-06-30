@@ -1036,6 +1036,12 @@ app.post('/api/documents/:id/export', async (req, res) => {
         return res.status(400).json({ error: true, message: "Original PDF not found in database. Cannot export formatted PDF." });
       }
 
+      // Clear global pollution from pdf-parse (which uses pdfjs-dist v5)
+      delete globalThis.pdfjsWorker;
+      delete global.pdfjsWorker;
+      delete globalThis.WorkerMessageHandler;
+      delete global.WorkerMessageHandler;
+      
       const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
       // Fix: Disable the worker to prevent version collision with pdf-parse's internal pdfjs version
       pdfjsLib.GlobalWorkerOptions.disableWorker = true;
