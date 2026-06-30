@@ -11,6 +11,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
   const [viewMode, setViewMode] = React.useState('text'); // 'text' or 'pdf'
 
   const isPdf = doc && doc.sourceFilename && doc.sourceFilename.toLowerCase().endsWith('.pdf');
+  const isImage = doc && doc.sourceFilename && (doc.sourceFilename.toLowerCase().endsWith('.png') || doc.sourceFilename.toLowerCase().endsWith('.jpg') || doc.sourceFilename.toLowerCase().endsWith('.jpeg'));
 
   // --- Text-based sweep-line renderer (polished inline pills) ---
   const renderTextWithOverlaps = () => {
@@ -165,8 +166,8 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
         </div>
       </div>
 
-      {/* View mode toggle for PDFs */}
-      {isPdf && doc && !loading && !error && (
+      {/* View mode toggle for PDFs and Images */}
+      {(isPdf || isImage) && doc && !loading && !error && (
         <div className="pdf-view-toggle">
           <button 
             className={`pdf-view-toggle__btn ${viewMode === 'text' ? 'active' : ''}`}
@@ -178,7 +179,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
             className={`pdf-view-toggle__btn ${viewMode === 'pdf' ? 'active' : ''}`}
             onClick={() => setViewMode('pdf')}
           >
-            <i className="fa-solid fa-file-pdf"></i> Original PDF
+            <i className={isImage ? "fa-solid fa-image" : "fa-solid fa-file-pdf"}></i> Original {isImage ? 'Image' : 'PDF'}
           </button>
         </div>
       )}
@@ -239,14 +240,14 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
               </div>
             )}
 
-            {/* Text-based redaction view (default, works for both text and PDF) */}
+            {/* Text-based redaction view (default, works for both text and PDF/Image) */}
             {viewMode === 'text' && (
               <>
-                {isPdf && (
+                {(isPdf || isImage) && (
                   <div className="pdf-source-badge">
-                    <i className="fa-solid fa-file-pdf"></i>
+                    <i className={isPdf ? "fa-solid fa-file-pdf" : "fa-solid fa-image"}></i>
                     <span>Source: <strong>{doc.sourceFilename}</strong></span>
-                    <span className="pdf-source-badge__hint">Switch to "Original PDF" tab to see the native layout</span>
+                    <span className="pdf-source-badge__hint">Switch to "Original {isPdf ? 'PDF' : 'Image'}" tab to see the native layout</span>
                   </div>
                 )}
                 {renderTextWithOverlaps()}
@@ -254,15 +255,25 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
             )}
 
             {/* Native PDF view with entity summary */}
-            {viewMode === 'pdf' && isPdf && (
+            {viewMode === 'pdf' && (isPdf || isImage) && (
               <div className="pdf-native-view">
                 {renderEntitySummaryBar()}
-                <div className="pdf-pages-container">
-                  <Document 
-                    file={`${API_BASE}/api/documents/${doc.id}/download-original`} 
-                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                    loading={<div className="pdf-loading">Loading PDF...</div>}
-                  >
+                
+                {isImage ? (
+                  <div style={{ textAlign: 'center', background: '#0a0a0a', border: '1px solid #333', padding: '2rem' }}>
+                    <img 
+                      src={`${API_BASE}/api/documents/${doc.id}/download-original`} 
+                      alt="Original Document" 
+                      style={{ maxWidth: '100%', border: '1px solid #444', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} 
+                    />
+                  </div>
+                ) : (
+                  <div className="pdf-pages-container">
+                    <Document 
+                      file={`${API_BASE}/api/documents/${doc.id}/download-original`} 
+                      onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                      loading={<div className="pdf-loading">Loading PDF...</div>}
+                    >
                     {Array.from(new Array(numPages || 0), (el, index) => (
                       <div key={`page_${index + 1}`} className="pdf-page-wrapper">
                         <Page 
@@ -276,6 +287,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
                     ))}
                   </Document>
                 </div>
+                )}
               </div>
             )}
 

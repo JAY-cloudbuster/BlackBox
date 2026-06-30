@@ -17,9 +17,10 @@ try { db.exec(`ALTER TABLE documents ADD COLUMN analysis_latency_ms INTEGER`); }
 try { db.exec(`ALTER TABLE documents ADD COLUMN original_file BLOB`); } catch (e) {}
 try { db.exec(`ALTER TABLE entities ADD COLUMN was_calibrated BOOLEAN DEFAULT 0`); } catch (e) {}
 try { db.exec(`ALTER TABLE entities ADD COLUMN bounding_boxes TEXT`); } catch (e) {}
+try { db.exec(`ALTER TABLE documents ADD COLUMN ocr_metadata TEXT`); } catch (e) {}
 
 const statements = {
-  insertDoc: db.prepare(`INSERT INTO documents (id, raw_text, source_filename, analysis_latency_ms, original_file) VALUES (?, ?, ?, ?, ?)`),
+  insertDoc: db.prepare(`INSERT INTO documents (id, raw_text, source_filename, analysis_latency_ms, original_file, ocr_metadata) VALUES (?, ?, ?, ?, ?, ?)`),
   insertEntity: db.prepare(`
     INSERT INTO entities 
     (id, document_id, text, start_index, end_index, entity_type, layer, confidence_score, reasoning, default_action, was_calibrated, bounding_boxes) 
@@ -51,8 +52,8 @@ const statements = {
   `)
 };
 
-function insertDocument(id, rawText, sourceFilename = null, latencyMs = 0, originalFile = null) {
-  statements.insertDoc.run(id, rawText, sourceFilename, latencyMs, originalFile);
+function insertDocument(id, rawText, sourceFilename = null, latencyMs = 0, originalFile = null, ocrMetadata = null) {
+  statements.insertDoc.run(id, rawText, sourceFilename, latencyMs, originalFile, ocrMetadata ? JSON.stringify(ocrMetadata) : null);
 }
 
 function insertEntities(documentId, entities) {
@@ -97,6 +98,7 @@ function getDocumentWithEntities(documentId) {
     plainTextDocument: doc.raw_text,
     sourceFilename: doc.source_filename,
     analysisLatencyMs: doc.analysis_latency_ms,
+    ocrMetadata: doc.ocr_metadata ? JSON.parse(doc.ocr_metadata) : null,
     entities: entities
   };
 }

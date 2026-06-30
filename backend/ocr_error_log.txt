@@ -1,0 +1,2 @@
+TypeError: Cannot read properties of undefined (reading 'map')
+    at C:\Users\kjaye\Desktop\BlackBox\backend\server.js:579:41

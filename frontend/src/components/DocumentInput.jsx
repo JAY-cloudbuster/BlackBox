@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { exampleDocuments } from '../constants/exampleDocuments';
 
 export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
-  const [mode, setMode] = useState('text'); // 'text' | 'file'
+  const [mode, setMode] = useState('text'); // 'text' | 'pdf' | 'image'
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   
@@ -40,23 +40,46 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
-    if (selected && selected.type === 'application/pdf') {
-      setFile(selected);
-      setError(null);
-    } else if (selected) {
-      setError({ message: "Only .pdf files are supported for upload.", code: 'invalid_file' });
-      setFile(null);
+    if (!selected) return;
+    
+    if (mode === 'pdf') {
+      if (selected.type === 'application/pdf') {
+        setFile(selected);
+        setError(null);
+      } else {
+        setError({ message: "Only .pdf files are supported in this tab.", code: 'invalid_file' });
+        setFile(null);
+      }
+    } else if (mode === 'image') {
+      if (selected.type === 'image/png' || selected.type === 'image/jpeg' || selected.type === 'image/jpg') {
+        setFile(selected);
+        setError(null);
+      } else {
+        setError({ message: "Only .png and .jpg files are supported in this tab.", code: 'invalid_file' });
+        setFile(null);
+      }
     }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     const dropped = e.dataTransfer.files[0];
-    if (dropped && dropped.type === 'application/pdf') {
-      setFile(dropped);
-      setError(null);
-    } else if (dropped) {
-      setError({ message: "Only .pdf files are supported for upload.", code: 'invalid_file' });
+    if (!dropped) return;
+    
+    if (mode === 'pdf') {
+      if (dropped.type === 'application/pdf') {
+        setFile(dropped);
+        setError(null);
+      } else {
+        setError({ message: "Only .pdf files are supported in this tab.", code: 'invalid_file' });
+      }
+    } else if (mode === 'image') {
+      if (dropped.type === 'image/png' || dropped.type === 'image/jpeg' || dropped.type === 'image/jpg') {
+        setFile(dropped);
+        setError(null);
+      } else {
+        setError({ message: "Only .png and .jpg files are supported in this tab.", code: 'invalid_file' });
+      }
     }
   };
 
@@ -94,17 +117,30 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
           Paste Text
         </div>
         <div 
-          onClick={() => !loadingStep && setMode('file')}
+          onClick={() => { if (!loadingStep) { setMode('pdf'); setFile(null); setError(null); } }}
           style={{
             cursor: loadingStep ? 'not-allowed' : 'pointer', 
             padding: '0.5rem 1rem', 
-            background: mode === 'file' ? 'rgba(255,255,255,0.1)' : 'transparent', 
+            background: mode === 'pdf' ? 'rgba(255,255,255,0.1)' : 'transparent', 
             borderRadius: 0, 
-            fontWeight: mode === 'file' ? '600' : '400',
+            fontWeight: mode === 'pdf' ? '600' : '400',
             transition: 'all 0.2s'
           }}
         >
           Upload PDF
+        </div>
+        <div 
+          onClick={() => { if (!loadingStep) { setMode('image'); setFile(null); setError(null); } }}
+          style={{
+            cursor: loadingStep ? 'not-allowed' : 'pointer', 
+            padding: '0.5rem 1rem', 
+            background: mode === 'image' ? 'rgba(255,255,255,0.1)' : 'transparent', 
+            borderRadius: 0, 
+            fontWeight: mode === 'image' ? '600' : '400',
+            transition: 'all 0.2s'
+          }}
+        >
+          Upload Image
         </div>
         
         <div style={{flex: 1}}></div>
@@ -192,14 +228,16 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
                 transition: 'all 0.2s ease'
               }}
             >
-              <i className="fa-solid fa-file-pdf" style={{fontSize: '3rem', color: file ? 'var(--accent-primary)' : 'var(--text-secondary)', marginBottom: '1rem'}}></i>
-              <h3 style={{color: 'var(--text-primary)'}}>{file ? file.name : 'Drag & Drop or Click to Select PDF'}</h3>
+              <i className={mode === 'pdf' ? "fa-solid fa-file-pdf" : "fa-solid fa-image"} style={{fontSize: '3rem', color: file ? 'var(--accent-primary)' : 'var(--text-secondary)', marginBottom: '1rem'}}></i>
+              <h3 style={{color: 'var(--text-primary)'}}>{file ? file.name : (mode === 'pdf' ? 'Drag & Drop or Click to Select PDF' : 'Drag & Drop or Click to Select Image')}</h3>
               <p style={{fontSize: '0.875rem', marginTop: '1rem', color: 'var(--text-secondary)', lineHeight: 1.5}}>
-                PDF text will be extracted and redacted. Export will produce a clean redacted PDF — original formatting and layout are not preserved in this version.
+                {mode === 'pdf' 
+                  ? 'PDF text will be extracted and redacted. Export will produce a clean redacted PDF.' 
+                  : 'Image text will be extracted via OCR and redacted. Export will produce a native PNG.'}
               </p>
               <input 
                 type="file" 
-                accept="application/pdf" 
+                accept={mode === 'pdf' ? ".pdf" : ".png, .jpg, .jpeg"} 
                 ref={fileInputRef} 
                 onChange={handleFileChange} 
                 style={{display: 'none'}}
@@ -214,11 +252,11 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
                 disabled={!!loadingStep || !file}
               >
                 {loadingStep === 'extracting' ? (
-                  <><i className="fa-solid fa-file-export fa-bounce"></i> Extracting Text & Analyzing PDF...</>
+                  <><i className="fa-solid fa-file-export fa-bounce"></i> Extracting Text & Analyzing {mode === 'pdf' ? 'PDF' : 'Image'}...</>
                 ) : loadingStep === 'analyzing' ? (
                   <><i className="fa-solid fa-circle-notch fa-spin"></i> Analyzing with Groq LLM...</>
                 ) : (
-                  <><i className="fa-solid fa-brain"></i> Analyze PDF</>
+                  <><i className="fa-solid fa-brain"></i> Analyze {mode === 'pdf' ? 'PDF' : 'Image'}</>
                 )}
               </button>
             </div>

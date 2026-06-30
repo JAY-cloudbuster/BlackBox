@@ -8,6 +8,7 @@ const multer = require('multer');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 const docx = require('docx');
+const Tesseract = require('tesseract.js');
 
 const express = require('express');
 const cors = require('cors');
@@ -432,7 +433,7 @@ async function fetchGroqAnalysis(text, retryCount = 0) {
   }
 }
 
-async function processDocumentText(text, sourceFilename = null, pdfData = null) {
+async function processDocumentText(text, sourceFilename = null, fileData = null) {
   if (!text || text.trim() === '') {
     throw { status: 400, code: 'empty_document', message: "Document text cannot be empty." };
   }
@@ -469,7 +470,7 @@ async function processDocumentText(text, sourceFilename = null, pdfData = null) 
   }
 
   const docId = crypto.randomUUID();
-  insertDocument(docId, parsedData.plainTextDocument, sourceFilename, latencyMs, pdfData ? pdfData.buffer : null);
+  insertDocument(docId, parsedData.plainTextDocument, sourceFilename, latencyMs, fileData ? fileData.buffer : null, fileData ? fileData.ocrMetadata : null);
 
   function normalizeEntityType(type) {
     if (!type) return "OTHER";
@@ -547,26 +548,65 @@ app.post('/api/documents', upload.single('file'), async (req, res) => {
 // POST /api/documents/upload
 app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file || req.file.mimetype !== 'application/pdf') {
-      return res.status(400).json({ error: true, code: 'invalid_file', message: "Only .pdf files are supported for this endpoint." });
+    if (!req.file) {
+      return res.status(400).json({ error: true, code: 'no_file', message: "No file was uploaded." });
+    }
+    const isImage = req.file.mimetype === 'image/png' || req.file.mimetype === 'image/jpeg';
+    const isPdf = req.file.mimetype === 'application/pdf';
+
+    if (!isPdf && !isImage) {
+      return res.status(400).json({ error: true, code: 'invalid_file', message: "Only .pdf, .png, and .jpeg files are supported for this endpoint." });
     }
     
-    // --- Step 1: Extract clean readable text via pdf-parse (for LLM analysis) ---
     let cleanText = '';
-    try {
-      const parser = new PDFParse({ data: req.file.buffer });
-      const result = await parser.getText();
-      cleanText = result.text;
-    } catch (e) {
-      console.error("PDF text extraction error (pdf-parse):", e.message);
-      return res.status(400).json({ error: true, code: 'pdf_parse_error', message: "Failed to extract text from PDF: " + (e.message || "Unknown error") });
+    let ocrMetadata = null;
+
+    if (isPdf) {
+      try {
+        const parser = new PDFParse({ data: req.file.buffer });
+        const result = await parser.getText();
+        cleanText = result.text;
+      } catch (e) {
+        console.error("PDF text extraction error (pdf-parse):", e.message);
+        return res.status(400).json({ error: true, code: 'pdf_parse_error', message: "Failed to extract text from PDF: " + (e.message || "Unknown error") });
+      }
+    } else if (isImage) {
+      try {
+        console.log("Running Tesseract OCR on image...");
+        const worker = await Tesseract.createWorker('eng');
+        const result = await worker.recognize(req.file.buffer, {}, { blocks: true });
+        cleanText = result.data.text;
+        
+        ocrMetadata = [];
+        if (result.data.blocks) {
+          for (const block of result.data.blocks) {
+            if (!block.paragraphs) continue;
+            for (const para of block.paragraphs) {
+              if (!para.lines) continue;
+              for (const line of para.lines) {
+                if (!line.words) continue;
+                for (const word of line.words) {
+                  ocrMetadata.push({
+                    text: word.text,
+                    bbox: word.bbox
+                  });
+                }
+              }
+            }
+          }
+        }
+        await worker.terminate();
+      } catch (e) {
+        console.error("OCR extraction error:", e);
+        return res.status(500).json({ error: true, code: 'ocr_error', message: "Failed to process text from image via OCR." });
+      }
     }
 
     if (!cleanText || cleanText.trim() === '') {
-      return res.status(400).json({ error: true, code: 'empty_pdf', message: "The PDF appears to be empty or contains no extractable text." });
+      return res.status(400).json({ error: true, code: 'empty_file', message: "The document appears to be empty or contains no extractable text." });
     }
 
-    const result = await processDocumentText(cleanText, req.file.originalname, { buffer: req.file.buffer });
+    const result = await processDocumentText(cleanText, req.file.originalname, { buffer: req.file.buffer, ocrMetadata });
     res.json(result);
   } catch (error) {
     if (error.status) {
@@ -602,7 +642,13 @@ app.get('/api/documents/:id/download-original', async (req, res) => {
     if (!doc.original_file) {
       return res.status(404).json({ error: true, message: "Original file not found for this document." });
     }
-    res.setHeader('Content-Type', 'application/pdf');
+    let contentType = 'application/pdf';
+    if (doc.sourceFilename) {
+      const lowerName = doc.sourceFilename.toLowerCase();
+      if (lowerName.endsWith('.png')) contentType = 'image/png';
+      else if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) contentType = 'image/jpeg';
+    }
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `inline; filename="${doc.sourceFilename || 'original.pdf'}"`);
     return res.end(Buffer.from(doc.original_file));
   } catch (error) {
@@ -655,7 +701,7 @@ app.post('/api/documents/:id/export', async (req, res) => {
     const docId = req.params.id;
     const { format, overrides } = req.body;
     
-    if (!['pdf', 'docx', 'txt'].includes(format)) {
+    if (!['pdf', 'docx', 'txt', 'image'].includes(format)) {
       return res.status(400).json({ error: true, message: "Invalid format." });
     }
 
@@ -715,7 +761,8 @@ app.post('/api/documents/:id/export', async (req, res) => {
     }
     
     insertExportLog(crypto.randomUUID(), docId, format);
-    const filename = `conseal-export-${docId}.${format}`;
+    const fileExt = format === 'image' ? 'png' : format;
+    const filename = `conseal-export-${docId}.${fileExt}`;
     
     if (format === 'txt') {
       let txtContent = '';
@@ -726,6 +773,83 @@ app.post('/api/documents/:id/export', async (req, res) => {
       res.setHeader('Content-Type', 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(txtContent);
+    }
+    
+    if (format === 'image') {
+      if (!document.original_file || !document.sourceFilename) {
+        return res.status(400).json({ error: true, message: "Original file is not an image." });
+      }
+      
+      const { createCanvas, loadImage } = require('canvas');
+      const image = await loadImage(document.original_file);
+      const canvas = createCanvas(image.width, image.height);
+      const ctx = canvas.getContext('2d');
+      
+      // Draw original image
+      ctx.drawImage(image, 0, 0, image.width, image.height);
+      
+      // Extract OCR words for matching
+      const ocrWords = document.ocr_metadata ? JSON.parse(document.ocr_metadata) : [];
+      
+      function normalizeForMatch(str) {
+        return str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      }
+
+      // Redact entities by drawing black rectangles
+      const occurrenceCounts = {};
+      
+      // Sort entities by their original start index so they appear in document order
+      const orderedEntities = [...document.entities].sort((a, b) => a.startIndex - b.startIndex);
+
+      for (const entity of orderedEntities) {
+        const userOverride = overrides && overrides[entity.id] !== undefined ? overrides[entity.id] : null;
+        const finalDisplayAction = userOverride !== null ? userOverride : entity.defaultAction;
+        
+        if (finalDisplayAction !== 'redact') {
+          continue; 
+        }
+
+        const target = normalizeForMatch(entity.text);
+        if (!target) continue;
+
+        if (!occurrenceCounts[target]) occurrenceCounts[target] = 0;
+        const occurrenceIndex = occurrenceCounts[target]++;
+
+        let matches = [];
+        for (let start = 0; start < ocrWords.length; start++) {
+          let accumulated = '';
+          for (let end = start; end < ocrWords.length; end++) {
+            accumulated += normalizeForMatch(ocrWords[end].text);
+            if (accumulated.length > target.length) break;
+            if (accumulated === target) {
+              matches.push({ startItem: start, endItem: end });
+              break;
+            }
+          }
+        }
+
+        const match = matches[occurrenceIndex];
+        if (match) {
+          ctx.fillStyle = '#111111'; // Dark gray/black for redaction
+          for (let k = match.startItem; k <= match.endItem; k++) {
+            const bbox = ocrWords[k].bbox;
+            // Pad the bounding box slightly for full coverage
+            const padding = 2;
+            ctx.fillRect(
+              bbox.x0 - padding, 
+              bbox.y0 - padding, 
+              bbox.x1 - bbox.x0 + (padding * 2), 
+              bbox.y1 - bbox.y0 + (padding * 2)
+            );
+          }
+        }
+      }
+      
+      const buffer = canvas.toBuffer('image/png');
+      const ext = document.sourceFilename.toLowerCase().endsWith('.jpg') || document.sourceFilename.toLowerCase().endsWith('.jpeg') ? 'jpeg' : 'png';
+      res.setHeader('Content-Type', `image/${ext}`);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.end(buffer);
     }
     
     if (format === 'pdf') {
@@ -785,8 +909,39 @@ app.post('/api/documents/:id/export', async (req, res) => {
       }
 
       try {
-        const extractedPages = await extractPositionedText(document.original_file);
-        const pdfDoc = await PDFDocument.load(document.original_file);
+        const isImage = document.sourceFilename && (document.sourceFilename.toLowerCase().endsWith('.png') || document.sourceFilename.toLowerCase().endsWith('.jpg') || document.sourceFilename.toLowerCase().endsWith('.jpeg'));
+        
+        let extractedPages;
+        let pdfDoc;
+
+        if (isImage) {
+          pdfDoc = await PDFDocument.create();
+          let image;
+          if (document.sourceFilename.toLowerCase().endsWith('.png')) {
+            image = await pdfDoc.embedPng(document.original_file);
+          } else {
+            image = await pdfDoc.embedJpg(document.original_file);
+          }
+          const page = pdfDoc.addPage([image.width, image.height]);
+          page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+
+          extractedPages = [{
+            pageNumber: 0,
+            pageWidth: image.width,
+            pageHeight: image.height,
+            items: (document.ocrMetadata || []).map(w => ({
+              text: w.text,
+              x: w.bbox.x0,
+              y: image.height - w.bbox.y1,
+              width: w.bbox.x1 - w.bbox.x0,
+              height: w.bbox.y1 - w.bbox.y0
+            }))
+          }];
+        } else {
+          extractedPages = await extractPositionedText(document.original_file);
+          pdfDoc = await PDFDocument.load(document.original_file);
+        }
+        
         const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
         // Group entities by page

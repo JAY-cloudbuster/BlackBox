@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE } from '../config';
 
-export default function ExportModal({ onClose, docId, userOverrides }) {
+export default function ExportModal({ onClose, docId, userOverrides, isImage }) {
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState(null);
 
@@ -29,7 +29,8 @@ export default function ExportModal({ onClose, docId, userOverrides }) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `conseal-export-${docId}.${format}`;
+      const fileExt = format === 'image' ? 'png' : format;
+      a.download = `conseal-export-${docId}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -68,11 +69,22 @@ export default function ExportModal({ onClose, docId, userOverrides }) {
           )}
 
           <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+            {isImage && (
+              <button 
+                className="primary-btn" 
+                onClick={() => handleExport('image')}
+                disabled={loading !== null}
+                style={{justifyContent: 'center'}}
+              >
+                {loading === 'image' ? <><i className="fa-solid fa-circle-notch fa-spin"></i> Generating Image...</> : <><i className="fa-solid fa-image"></i> Export as Native Image (.png)</>}
+              </button>
+            )}
+            
             <button 
               className="primary-btn" 
               onClick={() => handleExport('pdf')}
               disabled={loading !== null}
-              style={{justifyContent: 'center'}}
+              style={{justifyContent: 'center', background: isImage ? 'var(--bg-panel)' : 'var(--accent-primary)', border: isImage ? '1px solid var(--border-glass)' : 'none', boxShadow: isImage ? 'none' : undefined}}
             >
               {loading === 'pdf' ? <><i className="fa-solid fa-circle-notch fa-spin"></i> Generating PDF...</> : <><i className="fa-solid fa-file-pdf"></i> Export as PDF Document</>}
             </button>

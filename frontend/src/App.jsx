@@ -166,6 +166,7 @@ function App() {
           onClose={() => setExportModalOpen(false)} 
           docId={doc.documentId} 
           userOverrides={userOverrides} 
+          isImage={doc.sourceFilename && (doc.sourceFilename.toLowerCase().endsWith('.png') || doc.sourceFilename.toLowerCase().endsWith('.jpg') || doc.sourceFilename.toLowerCase().endsWith('.jpeg'))}
         />
       )}
 
