@@ -3,6 +3,7 @@ import DocumentViewer from './components/DocumentViewer'
 import ExplainabilitySidebar from './components/ExplainabilitySidebar'
 import DocumentInput from './components/DocumentInput'
 import ExportModal from './components/ExportModal'
+import Logo from './components/Logo'
 import { useEntityDecisions } from './hooks/useEntityDecisions'
 import './App.css'
 
@@ -19,6 +20,13 @@ function App() {
   const [activeSpan, setActiveSpan] = useState(null)
   const [previewMode, setPreviewMode] = useState(false)
   const [isExportModalOpen, setExportModalOpen] = useState(false)
+  
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
   // Rehydrate from URL on mount
   useEffect(() => {
@@ -114,33 +122,42 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <div className="logo" onClick={() => { window.history.pushState({}, '', '/'); setRawDoc(null); setError(null); }} style={{cursor: 'pointer'}}>
-          <i className="fa-solid fa-shield-halved"></i>
-          <h1>Conseal</h1>
+          <Logo style={{ fontSize: '1.5rem', color: 'var(--accent-brand)' }} />
+          <h1>Con<span style={{fontWeight: 800}}>seal</span></h1>
         </div>
         
-        {doc && (
-          <div className="doc-meta">
-            <div className="toggle-container" onClick={togglePreview}>
-              <span className={`toggle-label ${!previewMode ? 'active' : ''}`}>Audit View</span>
-              <div className={`toggle-track ${previewMode ? 'active' : ''}`}>
-                <div className="toggle-thumb"></div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+          {doc && (
+            <div className="doc-meta">
+              <div className="toggle-container" onClick={togglePreview}>
+                <span className={`toggle-label ${!previewMode ? 'active' : ''}`}>Audit View</span>
+                <div className={`toggle-track ${previewMode ? 'active' : ''}`}>
+                  <div className="toggle-thumb"></div>
+                </div>
+                <span className={`toggle-label ${previewMode ? 'active' : ''}`}>Export Preview</span>
               </div>
-              <span className={`toggle-label ${previewMode ? 'active' : ''}`}>Export Preview</span>
-            </div>
 
-            <span className="status-badge" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-              <i className="fa-solid fa-check-circle"></i> AI Analysis Complete
-              {doc.analysisLatencyMs && (
-                <span style={{fontSize: '0.8rem', opacity: 0.7, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '0.5rem'}}>
-                  <i className="fa-solid fa-bolt"></i> Analyzed in {(doc.analysisLatencyMs / 1000).toFixed(1)}s via Groq
-                </span>
-              )}
-            </span>
-            <button className="primary-btn" onClick={() => setExportModalOpen(true)}>
-              <i className="fa-solid fa-download"></i> Export Anonymized
-            </button>
-          </div>
-        )}
+              <span className="status-badge" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                <i className="fa-solid fa-check-circle"></i> AI Analysis Complete
+                {doc.analysisLatencyMs && (
+                  <span style={{fontSize: '0.8rem', opacity: 0.7, borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '0.5rem'}}>
+                    <i className="fa-solid fa-bolt"></i> Analyzed in {(doc.analysisLatencyMs / 1000).toFixed(1)}s via Groq
+                  </span>
+                )}
+              </span>
+              <button className="secondary-btn" onClick={() => { window.history.pushState({}, '', '/'); setRawDoc(null); setError(null); }}>
+                <i className="fa-solid fa-plus"></i> Add Another
+              </button>
+              <button className="primary-btn" onClick={() => setExportModalOpen(true)}>
+                <i className="fa-solid fa-download"></i> Export Anonymized
+              </button>
+            </div>
+          )}
+          
+          <button className="icon-btn theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle Theme">
+            <i className={`fa-solid ${theme === 'dark' ? 'fa-sun' : 'fa-moon'}`}></i>
+          </button>
+        </div>
       </header>
 
       {isExportModalOpen && (
@@ -158,10 +175,9 @@ function App() {
         
         {loading && !doc && (
           <div className="ai-loading-state" style={{gridColumn: '1 / -1', minHeight: '50vh', position: 'relative', background: 'transparent', backdropFilter: 'none', border: 'none'}}>
-            <div className="pulse-ring"></div>
-            <div className="loading-content">
-              <i className="fa-solid fa-brain fa-fade" style={{fontSize: '3rem', color: 'var(--accent-primary)', marginBottom: '1rem'}}></i>
-              <h3>Rehydrating Database Record...</h3>
+            <div className="custom-loader"></div>
+            <div className="loading-content" style={{marginTop: '2rem'}}>
+              <h3 style={{color: 'var(--text-primary)'}}>Rehydrating Database Record...</h3>
             </div>
           </div>
         )}

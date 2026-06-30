@@ -63,7 +63,7 @@ export default function SummaryPanel({ doc }) {
   );
 
   return (
-    <div className="summary-panel explain-card" style={{marginBottom: '2rem', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '12px', border: '1px solid var(--border-glass)', overflow: 'hidden'}}>
+    <div className="summary-panel explain-card" style={{marginBottom: '2rem', background: 'rgba(15, 23, 42, 0.6)', borderRadius: 0, border: '1px solid var(--border-glass)', overflow: 'hidden'}}>
       <div className="sidebar-header" style={{padding: '1rem', background: 'transparent', borderBottom: '1px solid var(--border-glass)'}}>
         <h4 style={{margin: 0, color: 'var(--accent-primary)', fontSize: '1rem'}}>AI Analysis Summary</h4>
       </div>
@@ -108,7 +108,7 @@ export default function SummaryPanel({ doc }) {
             {visibleToRedacted > 0 && <li>{visibleToRedacted} items the AI kept visible, you chose to hide.</li>}
           </ul>
           
-          <button onClick={toggleAudit} style={{marginTop: '1rem', width: '100%', background: 'transparent', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', padding: '0.5rem', borderRadius: '8px', cursor: 'pointer', transition: '0.2s', fontWeight: '600'}}>
+          <button onClick={toggleAudit} style={{marginTop: '1rem', width: '100%', background: 'transparent', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', padding: '0.5rem', borderRadius: 0, cursor: 'pointer', transition: '0.2s', fontWeight: '600'}}>
             <i className={`fa-solid ${isAuditOpen ? 'fa-chevron-up' : 'fa-chevron-down'}`} style={{marginRight: '0.5rem'}}></i>
             {isAuditOpen ? 'Hide Full Audit Trail' : 'View Full Audit Trail'}
           </button>
@@ -127,7 +127,7 @@ export default function SummaryPanel({ doc }) {
                     return 'var(--visible-accent)';
                   };
                   return (
-                    <div key={ent.id} style={{background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.05)'}}>
+                    <div key={ent.id} style={{background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: 0, marginBottom: '1rem', border: '1px solid rgba(255,255,255,0.05)'}}>
                       <div style={{fontWeight: 600, color: '#fff'}}>{ent.text} <span style={{opacity: 0.5, fontSize: '0.8rem', fontWeight: 400}}>({ent.type})</span></div>
                       
                       <div style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.5rem'}}>

@@ -1,28 +1,67 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;700;800&display=swap');
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 
-:root {
-  /* Color Palette */
-  --bg-dark: #0f172a;
-  --bg-panel: #1e293b;
-  --border-glass: rgba(255, 255, 255, 0.08);
+:root, :root[data-theme="dark"] {
+  /* Color Palette - Dark Mode (Default) */
+  --bg-dark: #121212;
+  --bg-panel: #1a1a1a;
+  --border-glass: rgba(255, 255, 255, 0.1);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
-  --accent-primary: #4f46e5;
-  --accent-hover: #4338ca;
   
-  --redacted-color: #0f172a;
-  --redacted-bg: rgba(244, 63, 94, 0.15);
-  --redacted-border: rgba(244, 63, 94, 0.5);
-  --redacted-accent: #f43f5e;
+  --accent-brand: #ef4444;       /* Brand Red */
+  --accent-hover: #dc2626;
   
-  --visible-bg: rgba(16, 185, 129, 0.15);
+  /* Layer semantic colors - MUST be distinct from brand accent */
+  --layer-critical: #991b1b;     /* Darker Red */
+  --layer-critical-bg: rgba(153, 27, 27, 0.15);
+  
+  --layer-ambiguous: #d97706;    /* Amber */
+  --layer-ambiguous-bg: rgba(217, 119, 6, 0.15);
+  
+  --layer-visible: #10b981;      /* Green */
+  --layer-visible-bg: rgba(16, 185, 129, 0.15);
+  
+  /* Legacy vars mapped to new layers for component compatibility */
+  --redacted-color: var(--layer-critical);
+  --redacted-bg: var(--layer-critical-bg);
+  --redacted-border: rgba(153, 27, 27, 0.5);
+  --redacted-accent: var(--layer-critical);
+  
+  --visible-bg: var(--layer-visible-bg);
   --visible-border: rgba(16, 185, 129, 0.5);
-  --visible-accent: #10b981;
+  --visible-accent: var(--layer-visible);
   
-  /* Typography */
   --font-sans: 'Inter', sans-serif;
   --font-heading: 'Outfit', sans-serif;
+}
+
+:root[data-theme="light"] {
+  /* Color Palette - Light Mode */
+  --bg-dark: #fafafa;
+  --bg-panel: #ffffff;
+  --border-glass: rgba(0, 0, 0, 0.1);
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  
+  --accent-brand: #ef4444;       /* Brand Red (Same) */
+  --accent-hover: #dc2626;
+  
+  --layer-critical: #991b1b;
+  --layer-critical-bg: rgba(153, 27, 27, 0.1);
+  --layer-ambiguous: #d97706;
+  --layer-ambiguous-bg: rgba(217, 119, 6, 0.1);
+  --layer-visible: #10b981;
+  --layer-visible-bg: rgba(16, 185, 129, 0.1);
+  
+  --redacted-color: var(--layer-critical);
+  --redacted-bg: var(--layer-critical-bg);
+  --redacted-border: rgba(153, 27, 27, 0.3);
+  --redacted-accent: var(--layer-critical);
+  
+  --visible-bg: var(--layer-visible-bg);
+  --visible-border: rgba(16, 185, 129, 0.3);
+  --visible-accent: var(--layer-visible);
 }
 
 * {
@@ -37,4 +76,27 @@ body {
   font-family: var(--font-sans);
   line-height: 1.6;
   min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Interactivity Accessibility Polish */
+*:focus-visible {
+  outline: 2px solid var(--accent-brand) !important;
+  outline-offset: 2px !important;
+}
+
+/* Custom Themed Loader */
+.custom-loader {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--border-glass);
+  border-bottom-color: var(--accent-brand);
+  border-radius: 0; /* ONLY circle exception */
+  display: inline-block;
+  animation: rotation 1s linear infinite;
+}
+
+@keyframes rotation {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }

@@ -79,14 +79,14 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
 
   return (
     <div className="document-input-container explain-card">
-      <div className="sidebar-header" style={{borderRadius: '16px 16px 0 0', display: 'flex', gap: '1rem', alignItems: 'center'}}>
+      <div className="sidebar-header" style={{borderRadius: 0, display: 'flex', gap: '1rem', alignItems: 'center'}}>
         <div 
           onClick={() => !loadingStep && setMode('text')}
           style={{
             cursor: loadingStep ? 'not-allowed' : 'pointer', 
             padding: '0.5rem 1rem', 
             background: mode === 'text' ? 'rgba(255,255,255,0.1)' : 'transparent', 
-            borderRadius: '8px', 
+            borderRadius: 0, 
             fontWeight: mode === 'text' ? '600' : '400',
             transition: 'all 0.2s'
           }}
@@ -99,7 +99,7 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
             cursor: loadingStep ? 'not-allowed' : 'pointer', 
             padding: '0.5rem 1rem', 
             background: mode === 'file' ? 'rgba(255,255,255,0.1)' : 'transparent', 
-            borderRadius: '8px', 
+            borderRadius: 0, 
             fontWeight: mode === 'file' ? '600' : '400',
             transition: 'all 0.2s'
           }}
@@ -117,7 +117,7 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
             color: '#fff',
             border: 'none',
             padding: '0.5rem 1rem',
-            borderRadius: '8px',
+            borderRadius: 0,
             cursor: loadingStep ? 'not-allowed' : 'pointer',
             fontWeight: '600',
             display: 'flex',
@@ -183,7 +183,7 @@ export default function DocumentInput({ onAnalyzeText, onAnalyzeFile }) {
               onDragOver={handleDragOver}
               style={{
                 border: '2px dashed var(--border-glass)', 
-                borderRadius: '12px', 
+                borderRadius: 0, 
                 padding: '3rem 2rem', 
                 textAlign: 'center', 
                 cursor: loadingStep ? 'not-allowed' : 'pointer', 

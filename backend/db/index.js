@@ -14,14 +14,16 @@ db.exec(schemaSql);
 // Idempotent migrations
 try { db.exec(`ALTER TABLE documents ADD COLUMN source_filename TEXT`); } catch (e) {}
 try { db.exec(`ALTER TABLE documents ADD COLUMN analysis_latency_ms INTEGER`); } catch (e) {}
+try { db.exec(`ALTER TABLE documents ADD COLUMN original_file BLOB`); } catch (e) {}
 try { db.exec(`ALTER TABLE entities ADD COLUMN was_calibrated BOOLEAN DEFAULT 0`); } catch (e) {}
+try { db.exec(`ALTER TABLE entities ADD COLUMN bounding_boxes TEXT`); } catch (e) {}
 
 const statements = {
-  insertDoc: db.prepare(`INSERT INTO documents (id, raw_text, source_filename, analysis_latency_ms) VALUES (?, ?, ?, ?)`),
+  insertDoc: db.prepare(`INSERT INTO documents (id, raw_text, source_filename, analysis_latency_ms, original_file) VALUES (?, ?, ?, ?, ?)`),
   insertEntity: db.prepare(`
     INSERT INTO entities 
-    (id, document_id, text, start_index, end_index, entity_type, layer, confidence_score, reasoning, default_action, was_calibrated) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, document_id, text, start_index, end_index, entity_type, layer, confidence_score, reasoning, default_action, was_calibrated, bounding_boxes) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   insertOverride: db.prepare(`INSERT INTO overrides (id, entity_id, action) VALUES (?, ?, ?)`),
   logExport: db.prepare(`INSERT INTO export_log (id, document_id, format) VALUES (?, ?, ?)`),
@@ -49,25 +51,16 @@ const statements = {
   `)
 };
 
-function insertDocument(id, raw_text, sourceFilename = null, latencyMs = null) {
-  statements.insertDoc.run(id, raw_text, sourceFilename, latencyMs);
+function insertDocument(id, rawText, sourceFilename = null, latencyMs = 0, originalFile = null) {
+  statements.insertDoc.run(id, rawText, sourceFilename, latencyMs, originalFile);
 }
 
 function insertEntities(documentId, entities) {
   const insertMany = db.transaction((ents) => {
-    for (const ent of ents) {
+    for (const e of ents) {
       statements.insertEntity.run(
-        ent.id, 
-        documentId, 
-        ent.text, 
-        ent.startIndex, 
-        ent.endIndex, 
-        ent.entityType, 
-        ent.layer, 
-        ent.confidenceScore, 
-        ent.reasoning, 
-        ent.defaultAction,
-        ent.was_calibrated ? 1 : 0
+        e.id, documentId, e.text, e.startIndex, e.endIndex, e.entityType, e.layer, 
+        e.confidenceScore, e.reasoning, e.defaultAction, e.wasCalibrated ? 1 : 0, e.boundingBoxes ? JSON.stringify(e.boundingBoxes) : null
       );
     }
   });
@@ -85,24 +78,26 @@ function insertExportLog(id, document_id, format) {
 function getDocumentWithEntities(documentId) {
   const doc = statements.getDoc.get(documentId);
   if (!doc) return null;
-  const entities = statements.getEntities.all(documentId);
+  const entities = statements.getEntities.all(documentId).map(e => ({
+    id: e.id,
+    documentId: e.document_id,
+    text: e.text,
+    startIndex: e.start_index,
+    endIndex: e.end_index,
+    entityType: e.entity_type,
+    layer: e.layer,
+    confidenceScore: e.confidence_score,
+    reasoning: e.reasoning,
+    defaultAction: e.default_action,
+    wasCalibrated: e.was_calibrated === 1,
+    boundingBoxes: e.bounding_boxes ? JSON.parse(e.bounding_boxes) : null
+  }));
   return {
     ...doc,
     plainTextDocument: doc.raw_text,
     sourceFilename: doc.source_filename,
     analysisLatencyMs: doc.analysis_latency_ms,
-    entities: entities.map(e => ({
-      id: e.id,
-      text: e.text,
-      startIndex: e.start_index,
-      endIndex: e.end_index,
-      entityType: e.entity_type,
-      layer: e.layer,
-      confidenceScore: e.confidence_score,
-      reasoning: e.reasoning,
-      defaultAction: e.default_action,
-      was_calibrated: e.was_calibrated === 1
-    }))
+    entities: entities
   };
 }
 

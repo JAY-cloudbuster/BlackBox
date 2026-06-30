@@ -1,13 +1,22 @@
 import React from 'react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function DocumentViewer({ doc, loading, error, activeSpan, onSpanClick, previewMode, showAiOriginal, setShowAiOriginal }) {
-  // Advanced sweep-line text renderer to perfectly handle overlapping LLM entity spans
+  const [numPages, setNumPages] = React.useState(null);
+  const [viewMode, setViewMode] = React.useState('text'); // 'text' or 'pdf'
+
+  const isPdf = doc && doc.sourceFilename && doc.sourceFilename.toLowerCase().endsWith('.pdf');
+
+  // --- Text-based sweep-line renderer (polished inline pills) ---
   const renderTextWithOverlaps = () => {
     if (!doc || !doc.plainTextDocument) return null;
     const text = doc.plainTextDocument;
     const entities = doc.entities || [];
     
-    // Collect all boundaries (start and end indices)
     let boundaries = new Set([0, text.length]);
     entities.forEach(e => {
       boundaries.add(e.startIndex);
@@ -20,10 +29,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
       const start = sortedBoundaries[i];
       const end = sortedBoundaries[i+1];
       const chunkText = text.slice(start, end);
-      
-      // Find all entities that cover this exact chunk
       const activeEntities = entities.filter(e => e.startIndex <= start && e.endIndex >= end);
-      
       chunks.push({ start, end, text: chunkText, entities: activeEntities });
     }
     
@@ -32,13 +38,11 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
         return <span key={idx}>{chunk.text}</span>;
       }
       
-      // Sort entities by length (shortest first) so smaller entities are rendered innermost and can intercept clicks
       const sortedEntities = [...chunk.entities].sort((a, b) => (a.endIndex - a.startIndex) - (b.endIndex - b.startIndex));
-      
       let element = <>{chunk.text}</>;
       
       for (const entity of sortedEntities) {
-        let elementContent;
+        let elementContent = null;
         let isPill = false;
         let spanClass = '';
 
@@ -50,6 +54,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
           if (chunk.start === entity.startIndex) {
             elementContent = (
               <>
+                {entity.finalDisplayAction === 'flag' && <i className="fa-solid fa-circle-dot" style={{fontSize: '8px', marginRight: '6px', opacity: 0.9}}></i>}
                 {entity.entityType}
                 {entity.isModified && <i className="fa-solid fa-pen" style={{fontSize: '9px', marginLeft: '4px', opacity: 0.8}}></i>}
               </>
@@ -83,15 +88,63 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
           <span 
             className={spanClass}
             onClick={(e) => { e.stopPropagation(); onSpanClick(entity, entity.id); }}
-            title={entity.isModified ? "User Modified Override" : `AI Layer: ${entity.aiLayer}`}
+            title={entity.isModified ? "User Modified Override" : `AI Layer: ${entity.layer}`}
           >
             {elementContent}
           </span>
         ) : <></>;
       }
-      
       return <React.Fragment key={idx}>{element}</React.Fragment>;
     });
+  };
+
+  // --- Entity summary bar for PDF view ---
+  const renderEntitySummaryBar = () => {
+    if (!doc || !doc.entities) return null;
+    const redacted = doc.entities.filter(e => e.finalDisplayAction === 'redact');
+    const flagged = doc.entities.filter(e => e.finalDisplayAction === 'flag');
+    const visible = doc.entities.filter(e => e.finalDisplayAction === 'show');
+
+    return (
+      <div className="pdf-entity-bar">
+        <div className="pdf-entity-bar__header">
+          <i className="fa-solid fa-shield-halved"></i>
+          <span>Detected Entities</span>
+          <span className="pdf-entity-bar__count">{doc.entities.length} total</span>
+        </div>
+        <div className="pdf-entity-bar__chips">
+          {redacted.map(e => (
+            <span 
+              key={e.id} 
+              className={`pdf-entity-chip pdf-entity-chip--redact ${activeSpan && activeSpan.id === e.id ? 'active' : ''}`}
+              onClick={() => onSpanClick(e, e.id)}
+            >
+              <i className="fa-solid fa-lock" style={{fontSize: '9px'}}></i>
+              {e.entityType}
+            </span>
+          ))}
+          {flagged.map(e => (
+            <span 
+              key={e.id} 
+              className={`pdf-entity-chip pdf-entity-chip--flag ${activeSpan && activeSpan.id === e.id ? 'active' : ''}`}
+              onClick={() => onSpanClick(e, e.id)}
+            >
+              <i className="fa-solid fa-circle-dot" style={{fontSize: '8px'}}></i>
+              {e.entityType}
+            </span>
+          ))}
+          {visible.map(e => (
+            <span 
+              key={e.id} 
+              className={`pdf-entity-chip pdf-entity-chip--show ${activeSpan && activeSpan.id === e.id ? 'active' : ''}`}
+              onClick={() => onSpanClick(e, e.id)}
+            >
+              {e.entityType}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -110,6 +163,25 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
           </span>
         </div>
       </div>
+
+      {/* View mode toggle for PDFs */}
+      {isPdf && doc && !loading && !error && (
+        <div className="pdf-view-toggle">
+          <button 
+            className={`pdf-view-toggle__btn ${viewMode === 'text' ? 'active' : ''}`}
+            onClick={() => setViewMode('text')}
+          >
+            <i className="fa-solid fa-font"></i> Redaction View
+          </button>
+          <button 
+            className={`pdf-view-toggle__btn ${viewMode === 'pdf' ? 'active' : ''}`}
+            onClick={() => setViewMode('pdf')}
+          >
+            <i className="fa-solid fa-file-pdf"></i> Original PDF
+          </button>
+        </div>
+      )}
+
       <div className="document-body">
         {loading ? (
           <div className="ai-loading-state">
@@ -124,7 +196,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
           <div className="empty-state error-state">
             <i className="fa-solid fa-triangle-exclamation" style={{color: 'var(--redacted-accent)'}}></i>
             <h3 style={{color: '#fff'}}>AI Engine Failure</h3>
-            <p className="error-details" style={{background: 'rgba(244, 63, 94, 0.1)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(244, 63, 94, 0.3)', color: '#fda4af', marginTop: '1rem', fontSize: '0.9rem', maxWidth: '80%'}}>
+            <p className="error-details" style={{background: 'rgba(244, 63, 94, 0.1)', padding: '1rem', borderRadius: 0, border: '1px solid rgba(244, 63, 94, 0.3)', color: '#fda4af', marginTop: '1rem', fontSize: '0.9rem', maxWidth: '80%'}}>
               {error}
             </p>
           </div>
@@ -143,7 +215,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
             )}
             
             {showAiOriginal && !previewMode && (
-              <div style={{background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#fcd34d'}}>
+              <div style={{background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', padding: '0.75rem 1rem', borderRadius: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#fcd34d'}}>
                 <i className="fa-solid fa-eye-slash" style={{fontSize: '1.2rem'}}></i>
                 <div>
                   <div style={{fontWeight: 600, fontSize: '0.9rem'}}>Viewing AI's original recommendation</div>
@@ -155,7 +227,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
             )}
 
             {previewMode && doc && doc.entities && (
-              <div style={{background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--visible-accent)', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#6ee7b7'}}>
+              <div style={{background: 'rgba(16, 185, 129, 0.1)', border: '1px solid var(--visible-accent)', padding: '0.75rem 1rem', borderRadius: 0, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#6ee7b7'}}>
                 <i className="fa-solid fa-file-export" style={{fontSize: '1.2rem'}}></i>
                 <div>
                   <div style={{fontWeight: 600, fontSize: '0.9rem'}}>Export Preview Active</div>
@@ -165,7 +237,49 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
                 </div>
               </div>
             )}
-            {renderTextWithOverlaps()}
+
+            {/* Text-based redaction view (default, works for both text and PDF) */}
+            {viewMode === 'text' && (
+              <>
+                {isPdf && (
+                  <div className="pdf-source-badge">
+                    <i className="fa-solid fa-file-pdf"></i>
+                    <span>Source: <strong>{doc.sourceFilename}</strong></span>
+                    <span className="pdf-source-badge__hint">Switch to "Original PDF" tab to see the native layout</span>
+                  </div>
+                )}
+                {renderTextWithOverlaps()}
+              </>
+            )}
+
+            {/* Native PDF view with entity summary */}
+            {viewMode === 'pdf' && isPdf && (
+              <div className="pdf-native-view">
+                {renderEntitySummaryBar()}
+                <div className="pdf-pages-container">
+                  <Document 
+                    file={`http://localhost:3000/api/documents/${doc.id}/download-original`} 
+                    onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                    loading={<div className="pdf-loading">Loading PDF...</div>}
+                  >
+                    {Array.from(new Array(numPages || 0), (el, index) => (
+                      <div key={`page_${index + 1}`} className="pdf-page-wrapper">
+                        <Page 
+                          pageNumber={index + 1} 
+                          renderTextLayer={false} 
+                          renderAnnotationLayer={false} 
+                          width={580} 
+                        />
+                        <div className="pdf-page-number">Page {index + 1}</div>
+                      </div>
+                    ))}
+                  </Document>
+                </div>
+              </div>
+            )}
+
+            {/* Fallback for non-PDF text mode */}
+            {viewMode === 'pdf' && !isPdf && renderTextWithOverlaps()}
           </>
         )}
       </div>

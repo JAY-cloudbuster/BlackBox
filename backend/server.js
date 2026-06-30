@@ -1,16 +1,15 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
+const { PDFParse } = require('pdf-parse');
+const { db, insertDocument, insertEntities, getDocumentWithEntities, insertOverride, insertExportLog, getLatestOverrides } = require('./db/index');
 const Groq = require('groq-sdk');
 const { z } = require('zod');
 const crypto = require('crypto');
 const multer = require('multer');
-const { PDFParse } = require('pdf-parse');
-const { PDFDocument, StandardFonts } = require('pdf-lib');
+
 const docx = require('docx');
 
-const { db, insertDocument, insertEntities, insertOverride, insertExportLog, getDocumentWithEntities, getLatestOverrides } = require('./db/index');
-
+const express = require('express');
+const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
@@ -355,14 +354,22 @@ async function fetchGroqAnalysis(text, retryCount = 0) {
     prompt += "\n\nCRITICAL REMINDER: Your previous response failed schema validation. You MUST respond with ONLY valid JSON perfectly matching the schema. Do not wrap in markdown.";
   }
 
+  // Truncate extremely long documents to avoid hitting Groq output token limits
+  let inputText = text;
+  if (inputText.length > 12000) {
+    console.log(`Document text truncated from ${inputText.length} to 12000 chars for LLM analysis.`);
+    inputText = inputText.substring(0, 12000);
+  }
+
   const makeRequest = async () => {
     return await groq.chat.completions.create({
       messages: [
         { role: 'system', content: prompt },
-        { role: 'user', content: text }
+        { role: 'user', content: inputText }
       ],
-      model: 'llama-3.3-70b-versatile',
+      model: 'llama-3.1-8b-instant',
       temperature: 0.1,
+      max_tokens: 2000,
       response_format: { type: 'json_object' }
     });
   };
@@ -383,13 +390,26 @@ async function fetchGroqAnalysis(text, retryCount = 0) {
   };
 
   try {
-    const chatCompletion = await withTimeout(makeRequest(), 15000);
+    const chatCompletion = await withTimeout(makeRequest(), 60000);
     return chatCompletion.choices[0].message.content;
   } catch (error) {
     if (error.code === 'timeout') {
       throw error;
     }
     
+    // Check if it's a 400 json_validate_failed error (LLM ran out of tokens)
+    if (error.status === 400 && error.message && error.message.includes('json_validate_failed')) {
+      console.log("Groq returned 400 json_validate_failed — document may be too complex. Retrying...");
+      try {
+        const retryCompletion = await withTimeout(makeRequest(), 20000);
+        return retryCompletion.choices[0].message.content;
+      } catch (retryError) {
+        const err = new Error("Document is too complex for AI analysis. Try a shorter or simpler document.");
+        err.code = "json_validate_failed";
+        throw err;
+      }
+    }
+
     // Check if it's a 429 rate limit error
     if (error.status === 429 || (error.message && error.message.includes('429'))) {
       console.log("Rate limited (429) by Groq. Waiting 2s before retry...");
@@ -411,7 +431,7 @@ async function fetchGroqAnalysis(text, retryCount = 0) {
   }
 }
 
-async function processDocumentText(text, sourceFilename = null) {
+async function processDocumentText(text, sourceFilename = null, pdfData = null) {
   if (!text || text.trim() === '') {
     throw { status: 400, code: 'empty_document', message: "Document text cannot be empty." };
   }
@@ -422,7 +442,6 @@ async function processDocumentText(text, sourceFilename = null) {
   console.log("Analyzing document with Groq LLM...");
   let llmResponse;
   let parsedData;
-  
   let latencyMs = 0;
   
   try {
@@ -439,23 +458,17 @@ async function processDocumentText(text, sourceFilename = null) {
       documentSchema.parse(parsedData); 
     }
   } catch (llmError) {
+    require('fs').writeFileSync('groq_error_log.txt', llmError.stack || llmError.message || String(llmError));
     console.error("Groq Engine Error:", llmError.message);
-    
-    if (llmError.code === 'timeout') {
-      throw { status: 504, code: 'timeout', message: "Analysis is taking longer than expected. Try a shorter document or try again." };
-    }
-    if (llmError.code === 'rate_limited') {
-      throw { status: 429, code: 'rate_limited', message: "Too many requests to the AI engine. Please wait a moment and try again." };
-    }
-    if (llmError instanceof z.ZodError || llmError instanceof SyntaxError) {
-      throw { status: 500, code: 'invalid_schema', message: "LLM Output Schema Validation Failed after retry. The AI returned a malformed format." };
-    }
-    
+    if (llmError.code === 'timeout') throw { status: 504, code: 'timeout', message: "Analysis is taking longer than expected. Try a shorter document or try again." };
+    if (llmError.code === 'rate_limited') throw { status: 429, code: 'rate_limited', message: "Too many requests to the AI engine. Please wait a moment and try again." };
+    if (llmError.code === 'json_validate_failed') throw { status: 400, code: 'json_validate_failed', message: llmError.message };
+    if (llmError instanceof z.ZodError || llmError instanceof SyntaxError) throw { status: 500, code: 'invalid_schema', message: "LLM Output Schema Validation Failed after retry. The AI returned a malformed format." };
     throw { status: 500, code: 'unknown', message: "Failed to connect to AI Engine or LLM provider." };
   }
 
   const docId = crypto.randomUUID();
-  insertDocument(docId, parsedData.plainTextDocument, sourceFilename, latencyMs);
+  insertDocument(docId, parsedData.plainTextDocument, sourceFilename, latencyMs, pdfData ? pdfData.buffer : null);
 
   function normalizeEntityType(type) {
     if (!type) return "OTHER";
@@ -537,21 +550,22 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: true, code: 'invalid_file', message: "Only .pdf files are supported for this endpoint." });
     }
     
-    let text;
+    // --- Step 1: Extract clean readable text via pdf-parse (for LLM analysis) ---
+    let cleanText = '';
     try {
       const parser = new PDFParse({ data: req.file.buffer });
       const result = await parser.getText();
-      text = result.text;
+      cleanText = result.text;
     } catch (e) {
-      console.error("PDF Parse Error:", e);
-      return res.status(400).json({ error: true, code: 'pdf_parse_error', message: "Failed to parse PDF file: " + (e.message || "Unknown error") });
+      console.error("PDF text extraction error (pdf-parse):", e.message);
+      return res.status(400).json({ error: true, code: 'pdf_parse_error', message: "Failed to extract text from PDF: " + (e.message || "Unknown error") });
     }
 
-    if (!text || text.trim() === '') {
-      return res.status(400).json({ error: true, code: 'no_extractable_text', message: "This PDF appears to be a scanned image with no selectable text. Try a text-based PDF." });
+    if (!cleanText || cleanText.trim() === '') {
+      return res.status(400).json({ error: true, code: 'empty_pdf', message: "The PDF appears to be empty or contains no extractable text." });
     }
 
-    const result = await processDocumentText(text, req.file.originalname);
+    const result = await processDocumentText(cleanText, req.file.originalname, { buffer: req.file.buffer });
     res.json(result);
   } catch (error) {
     if (error.status) {
@@ -573,6 +587,26 @@ app.get('/api/documents/:id/audit-trail', (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: true, code: 'internal_error', message: "Failed to retrieve audit trail." });
+  }
+});
+
+// GET /api/documents/:id/download-original
+app.get('/api/documents/:id/download-original', async (req, res) => {
+  try {
+    const docId = req.params.id;
+    const doc = getDocumentWithEntities(docId);
+    if (!doc) {
+      return res.status(404).json({ error: true, message: "Document not found." });
+    }
+    if (!doc.original_file) {
+      return res.status(404).json({ error: true, message: "Original file not found for this document." });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${doc.sourceFilename || 'original.pdf'}"`);
+    return res.end(Buffer.from(doc.original_file));
+  } catch (error) {
+    console.error("Download Error:", error);
+    res.status(500).json({ error: true, message: "Failed to download original file." });
   }
 });
 
@@ -629,36 +663,123 @@ app.post('/api/documents/:id/export', async (req, res) => {
       return res.status(404).json({ error: true, message: "Document not found." });
     }
 
-    // Sort entities descending by index so string replacements don't shift subsequent indices
-    const entities = [...document.entities].sort((a, b) => b.startIndex - a.startIndex);
+    // Sort entities descending by length to handle overlaps appropriately
+    const sortedEntities = [...document.entities].sort((a, b) => {
+      const lenA = a.endIndex - a.startIndex;
+      const lenB = b.endIndex - b.startIndex;
+      return lenB - lenA; 
+    });
     
-    let redactedText = document.plainTextDocument;
+    const text = document.plainTextDocument;
+    const charToEntity = new Array(text.length).fill(null);
+    for (let entity of sortedEntities) {
+      for (let i = entity.startIndex; i < entity.endIndex; i++) {
+        if (!charToEntity[i]) {
+          charToEntity[i] = entity;
+        }
+      }
+    }
     
-    for (const entity of entities) {
-      const userOverride = overrides && overrides[entity.id] !== undefined ? overrides[entity.id] : null;
-      const finalAction = userOverride !== null ? userOverride : entity.defaultAction;
-      
-      if (finalAction !== 'show') {
-        // Only redact if the entity is actually within bounds (safety check)
-        if (entity.startIndex >= 0 && entity.endIndex <= redactedText.length) {
-          const spanLength = entity.endIndex - entity.startIndex;
-          const replacement = '█'.repeat(spanLength);
-          redactedText = redactedText.substring(0, entity.startIndex) + replacement + redactedText.substring(entity.endIndex);
+    const tokens = [];
+    let i = 0;
+    while (i < text.length) {
+      if (!charToEntity[i]) {
+        let textChunk = '';
+        while (i < text.length && !charToEntity[i]) {
+          textChunk += text[i];
+          i++;
+        }
+        tokens.push({ type: 'text', content: textChunk });
+      } else {
+        const entity = charToEntity[i];
+        const userOverride = overrides && overrides[entity.id] !== undefined ? overrides[entity.id] : null;
+        const finalAction = userOverride !== null ? userOverride : entity.defaultAction;
+        
+        if (finalAction !== 'show') {
+           tokens.push({ type: 'pill', content: entity.entityType });
+        } else {
+           let showChunk = '';
+           while (i < text.length && charToEntity[i] === entity) {
+             showChunk += text[i];
+             i++;
+           }
+           tokens.push({ type: 'text', content: showChunk });
+           continue; 
+        }
+        
+        while (i < text.length && charToEntity[i] === entity) {
+          i++;
         }
       }
     }
     
     insertExportLog(crypto.randomUUID(), docId, format);
-    
     const filename = `conseal-export-${docId}.${format}`;
     
     if (format === 'txt') {
+      let txtContent = '';
+      for (const token of tokens) {
+        if (token.type === 'text') txtContent += token.content;
+        else txtContent += `[${token.content}]`;
+      }
       res.setHeader('Content-Type', 'text/plain');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      return res.send(redactedText);
+      return res.send(txtContent);
     }
     
     if (format === 'pdf') {
+      if (document.original_file) {
+        const groups = {};
+        for (const e of document.entities) {
+          const textVal = e.text;
+          if (!textVal) continue;
+          
+          const normalized = textVal.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+          if (!groups[normalized]) {
+            groups[normalized] = { value: textVal, type: e.entityType, occurrences: [] };
+          }
+          const override = overrides && overrides[e.id] !== undefined ? overrides[e.id] : null;
+          const finalAction = override !== null ? override : e.defaultAction;
+          groups[normalized].occurrences.push({
+            startIndex: e.startIndex,
+            action: finalAction,
+            type: e.entityType
+          });
+        }
+        
+        const redactionsList = Object.values(groups).map(g => {
+          g.occurrences.sort((a, b) => a.startIndex - b.startIndex);
+          return g;
+        });
+
+        const { execFile } = require('child_process');
+        const path = require('path');
+        const pythonScript = path.join(__dirname, 'redact_pdf.py');
+        
+        const child = execFile('python', [pythonScript, JSON.stringify(redactionsList)], { 
+          encoding: 'buffer',
+          maxBuffer: 50 * 1024 * 1024 
+        }, (error, stdout, stderr) => {
+          if (error) {
+            console.error("Redaction script error:", error);
+            console.error("Stderr:", stderr ? stderr.toString() : '');
+            return res.status(500).json({ error: true, code: 'export_failed', message: "Failed to redact PDF." });
+          }
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+          return res.end(stdout);
+        });
+        
+        child.stdin.on('error', (err) => {
+          console.error("child.stdin write error:", err.message);
+          // Do not send response here if already handled by execFile callback
+        });
+        child.stdin.write(document.original_file);
+        child.stdin.end();
+        return;
+      }
+      
+      // Fallback for plain-text documents exported to PDF
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const fontSize = 11;
@@ -667,41 +788,93 @@ app.post('/api/documents/:id/export', async (req, res) => {
       const { width, height } = page.getSize();
       
       let y = height - margin;
+      let x = margin;
       
-      const breakLines = (text, maxWidth, font, fontSize) => {
-        if (!text) return [];
-        const words = text.split(' ');
-        let lines = [];
-        let currentLine = words[0] || '';
-        
-        for (let i = 1; i < words.length; i++) {
-          const word = words[i];
-          const textWidth = font.widthOfTextAtSize(currentLine + ' ' + word, fontSize);
-          if (textWidth < maxWidth) {
-            currentLine += ' ' + word;
-          } else {
-            lines.push(currentLine);
-            currentLine = word;
+      const elements = [];
+      for (const token of tokens) {
+        if (token.type === 'pill') {
+          elements.push(token);
+        } else {
+          const lines = token.content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (i > 0) elements.push({ type: 'newline' });
+            
+            const words = lines[i].split(/(\s+)/);
+            for (const word of words) {
+               if (word.length > 0) elements.push({ type: 'text', content: word });
+            }
           }
         }
-        if (currentLine) lines.push(currentLine);
-        return lines;
-      };
+      }
 
-      const rawLines = redactedText.split('\n');
-      for (const rawLine of rawLines) {
-        if (rawLine.trim() === '') {
-           y -= (fontSize + 6);
-           continue;
-        }
-        const wrappedLines = breakLines(rawLine, width - 2*margin, font, fontSize);
-        for (const line of wrappedLines) {
+      const pillPadding = 4;
+      
+      const sanitizeWinAnsi = (str) => {
+        if (!str) return '';
+        return str
+          .replace(/[\r\t]/g, ' ')
+          .replace(/[“”]/g, '"')
+          .replace(/[‘’]/g, "'")
+          .replace(/[—–]/g, "-")
+          .replace(/[^\x00-\xFF]/g, '');
+      };
+      
+      for (const el of elements) {
+        if (el.type === 'newline') {
+          x = margin;
+          y -= (fontSize + 6);
           if (y < margin) {
             page = pdfDoc.addPage();
             y = height - margin;
           }
-          page.drawText(line, { x: margin, y, size: fontSize, font });
+          continue;
+        }
+        
+        let elWidth = 0;
+        let isSpace = false;
+        if (el.type === 'pill') {
+          el.content = sanitizeWinAnsi(el.content);
+          elWidth = font.widthOfTextAtSize(el.content, fontSize - 1) + (pillPadding * 2);
+        } else {
+          el.content = sanitizeWinAnsi(el.content);
+          elWidth = font.widthOfTextAtSize(el.content, fontSize);
+          isSpace = /^[\s]+$/.test(el.content);
+        }
+        
+        if (x + elWidth > width - margin && x > margin && !isSpace) {
+          x = margin;
           y -= (fontSize + 6);
+          if (y < margin) {
+            page = pdfDoc.addPage();
+            y = height - margin;
+          }
+        }
+        
+        if (el.type === 'pill') {
+          page.drawRectangle({
+            x: x,
+            y: y - 2,
+            width: elWidth,
+            height: fontSize + 4,
+            color: rgb(0.2, 0.2, 0.2)
+          });
+          page.drawText(el.content, {
+            x: x + pillPadding,
+            y: y,
+            size: fontSize - 1,
+            font: font,
+            color: rgb(1, 1, 1)
+          });
+          x += elWidth;
+        } else {
+          page.drawText(el.content, {
+            x: x,
+            y: y,
+            size: fontSize,
+            font: font,
+            color: rgb(0, 0, 0)
+          });
+          x += elWidth;
         }
       }
       
@@ -712,11 +885,44 @@ app.post('/api/documents/:id/export', async (req, res) => {
     }
     
     if (format === 'docx') {
+      const paragraphs = [];
+      let currentParagraphRuns = [];
+      
+      const flushRun = (content, isPill) => {
+        if (isPill) {
+           currentParagraphRuns.push(new docx.TextRun({ 
+             text: ` ${content} `,
+             color: "FFFFFF",
+             shading: { type: docx.ShadingType.CLEAR, fill: "333333", color: "333333" },
+             bold: true
+           }));
+        } else {
+           currentParagraphRuns.push(new docx.TextRun({ text: content }));
+        }
+      };
+
+      for (const token of tokens) {
+        if (token.type === 'pill') {
+          flushRun(token.content, true);
+        } else {
+          const lines = token.content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (i > 0) {
+              paragraphs.push(new docx.Paragraph({ children: currentParagraphRuns }));
+              currentParagraphRuns = [];
+            }
+            if (lines[i].length > 0) {
+              flushRun(lines[i], false);
+            }
+          }
+        }
+      }
+      if (currentParagraphRuns.length > 0) {
+        paragraphs.push(new docx.Paragraph({ children: currentParagraphRuns }));
+      }
+
       const doc = new docx.Document({
-        sections: [{
-          properties: {},
-          children: redactedText.split('\n').map(text => new docx.Paragraph({ children: [new docx.TextRun(text)] }))
-        }]
+        sections: [{ properties: {}, children: paragraphs }]
       });
       const b64string = await docx.Packer.toBase64String(doc);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -725,8 +931,17 @@ app.post('/api/documents/:id/export', async (req, res) => {
     }
 
   } catch (error) {
-    console.error("Export Error:", error);
-    res.status(500).json({ error: true, message: "Failed to generate export." });
+    console.error("Export Error:", error.message);
+    console.error(error.stack);
+    
+    let errorMessage = "Failed to generate export.";
+    if (error.message && error.message.includes("WinAnsi cannot encode")) {
+      errorMessage = "PDF Generation Failed: The document contains special characters unsupported by the standard PDF font.";
+    } else if (error.message && error.message.includes("widthOfTextAtSize")) {
+      errorMessage = "PDF Generation Failed: Could not calculate redaction label width.";
+    }
+
+    res.status(500).json({ error: true, message: errorMessage });
   }
 });
 

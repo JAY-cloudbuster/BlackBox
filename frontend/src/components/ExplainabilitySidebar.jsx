@@ -94,7 +94,7 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
                 <div className="meta-val" style={{textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                   {activeSpan.aiLayer}
                   {activeSpan.was_calibrated && (
-                    <span title="Safety Calibrated: Automatically downgraded to flag for human review due to low confidence." style={{color: '#f59e0b', fontSize: '0.9rem', padding: '2px 6px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '4px', border: '1px solid rgba(245, 158, 11, 0.3)'}}>
+                    <span title="Safety Calibrated: Automatically downgraded to flag for human review due to low confidence." style={{color: '#f59e0b', fontSize: '0.9rem', padding: '2px 6px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: 0, border: '1px solid rgba(245, 158, 11, 0.3)'}}>
                       <i className="fa-solid fa-shield-halved"></i> Safety Calibrated
                     </span>
                   )}

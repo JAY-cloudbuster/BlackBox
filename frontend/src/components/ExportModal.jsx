@@ -44,7 +44,7 @@ export default function ExportModal({ onClose, docId, userOverrides }) {
   return (
     <div className="modal-backdrop" style={backdropStyle}>
       <div className="explain-card" style={modalStyle}>
-        <div className="sidebar-header" style={{borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <div className="sidebar-header" style={{borderRadius: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <h3 style={{margin: 0}}>Export Anonymized Case File</h3>
           <button onClick={onClose} style={{background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem'}}>
             <i className="fa-solid fa-xmark"></i>

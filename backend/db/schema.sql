@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS documents (
   raw_text TEXT NOT NULL,
   source_filename TEXT,
   analysis_latency_ms INTEGER,
+  original_file BLOB,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS entities (
   reasoning TEXT NOT NULL,
   default_action TEXT NOT NULL CHECK(default_action IN ('redact','flag','show')),
   was_calibrated BOOLEAN DEFAULT 0,
+  bounding_boxes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
