@@ -9,7 +9,7 @@
 
 **Conseal** is a lightning-fast, AI-powered document sanitization platform that automatically detects and redacts Personally Identifiable Information (PII) from PDFs, Images, and Text files while providing a transparent Explainability Engine for human review.
 
-[**Live Demo**](https://black-box-dun-iota.vercel.app/) • [**Demo Video**]([https://drive.google.com/drive/folders/1y5NW5UF9F6obAtN2ajwyCdkDuIyFRE0A?usp=sharing](https://drive.google.com/drive/folders/1y5NW5UF9F6obAtN2ajwyCdkDuIyFRE0A?usp=sharing)) • [**Project Writeup**](./WRITEUP.md) • [**GitHub Repository**](INSERT_GITHUB_LINK_HERE)
+[**Live Demo**](https://black-box-dun-iota.vercel.app/) • [**Demo Video**](https://drive.google.com/drive/folders/1y5NW5UF9F6obAtN2ajwyCdkDuIyFRE0A?usp=sharing) • [**Project Writeup**](./WRITEUP.md) • [**GitHub Repository**](INSERT_GITHUB_LINK_HERE)
 
 </div>
 
@@ -21,7 +21,8 @@ Judges, welcome to the Conseal repository! You can find all required submission 
 
 - **🔗 Public GitHub Repository:** [View on GitHub](INSERT_GITHUB_LINK_HERE)
 - **🚀 Live Deployment:** [Frontend (Vercel) & Backend (Render)](https://black-box-dun-iota.vercel.app/)
-- **🎥 Demo Video:** [Watch the Experience in Action](INSERT_VIDEO_LINK_HERE)
+- **🎥 Demo Video:** [Watch the Experience in Action](https://drive.google.com/drive/folders/1y5NW5UF9F6obAtN2ajwyCdkDuIyFRE0A?usp=sharing)
+  - *If the link above doesn't click, copy and paste this URL:* `https://drive.google.com/drive/folders/1y5NW5UF9F6obAtN2ajwyCdkDuIyFRE0A?usp=sharing`
 - **📝 Project Writeup:** [Read the ~Half-Page Writeup](./WRITEUP.md) (Details on what we built vs. what we excluded)
 - **💻 Runnable Source Code:** Setup instructions provided below.
 
