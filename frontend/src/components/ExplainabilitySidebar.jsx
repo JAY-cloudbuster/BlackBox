@@ -13,6 +13,39 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
       setActiveTab('redaction');
     }
   }, [activeSpan?.id, activeSpan?.aiLayer]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!doc || !doc.entities || doc.entities.length === 0 || previewMode) return;
+
+      // Prevent interacting with inputs/textareas
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        let nextIndex = 0;
+        if (activeSpan) {
+          const idx = doc.entities.findIndex(ent => ent.id === activeSpan.id);
+          nextIndex = (idx + 1) % doc.entities.length;
+        }
+        window.dispatchEvent(new CustomEvent('conseal:select-entity', { detail: doc.entities[nextIndex] }));
+      }
+      
+      if (activeSpan) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          setOverride(activeSpan.id, 'redact');
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          setOverride(activeSpan.id, 'show');
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [doc, activeSpan, previewMode, setOverride]);
+
   if (!doc) {
     return (
       <aside className="explain-sidebar">
@@ -248,11 +281,38 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
               onClick={() => setOverride(activeSpan.id, 'show')}
               disabled={previewMode}
               style={{flex: 1, justifyContent: 'center'}}
-              aria-label="Show this entity"
+              aria-label="Keep this entity visible"
             >
               <i className="fa-solid fa-eye"></i> Show This
             </button>
-            {activeSpan.isModified && (
+          </div>
+          <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem'}}>
+            <button 
+              className="primary-btn inactive-override"
+              onClick={() => {
+                const matches = doc.entities.filter(e => e.text.toLowerCase() === activeSpan.text.toLowerCase());
+                matches.forEach(m => setOverride(m.id, 'redact'));
+              }}
+              disabled={previewMode}
+              style={{flex: 1, justifyContent: 'center', fontSize: '0.8rem', padding: '0.4rem'}}
+              title={`Hide all instances of "${activeSpan.text}"`}
+            >
+              <i className="fa-solid fa-list-check"></i> Hide All ({doc.entities.filter(e => e.text.toLowerCase() === activeSpan.text.toLowerCase()).length})
+            </button>
+            <button 
+              className="primary-btn inactive-override"
+              onClick={() => {
+                const matches = doc.entities.filter(e => e.text.toLowerCase() === activeSpan.text.toLowerCase());
+                matches.forEach(m => setOverride(m.id, 'show'));
+              }}
+              disabled={previewMode}
+              style={{flex: 1, justifyContent: 'center', fontSize: '0.8rem', padding: '0.4rem'}}
+              title={`Show all instances of "${activeSpan.text}"`}
+            >
+              <i className="fa-solid fa-list-check"></i> Show All ({doc.entities.filter(e => e.text.toLowerCase() === activeSpan.text.toLowerCase()).length})
+            </button>
+          </div>
+          {activeSpan.isModified && (
               <button 
                 className="primary-btn"
                 onClick={() => resetOverride(activeSpan.id)}
@@ -305,7 +365,6 @@ export default function ExplainabilitySidebar({ doc, activeSpan, previewMode, se
             Why Not?
           </button>
         </div>
-      </div>
     </aside>
   );
 }

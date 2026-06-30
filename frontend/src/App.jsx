@@ -14,7 +14,7 @@ function App() {
 
   const [rawDoc, setRawDoc] = useState(null)
   const [showAiOriginal, setShowAiOriginal] = useState(false)
-  const { document: doc, setOverride, resetOverride, userOverrides } = useEntityDecisions(rawDoc, showAiOriginal)
+  const { document: doc, setOverride, resetOverride, addManualEntity, userOverrides } = useEntityDecisions(rawDoc, showAiOriginal)
   
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -217,6 +217,7 @@ function App() {
               setShowAiOriginal={setShowAiOriginal}
               setOverride={setOverride}
               resetOverride={resetOverride}
+              addManualEntity={addManualEntity}
             />
             <ExplainabilitySidebar 
               doc={doc}

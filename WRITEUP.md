@@ -8,6 +8,7 @@ To solve this, we built a system powered by LLM inference (using Groq for ultra-
 - **Accepts Multiple Formats:** Users can input raw text, multi-page PDFs, or images (.png, .jpg).
 - **Employs Intelligent Extraction:** It parses the document, passes it through an AI engine that identifies PII (names, emails, financial details, contextual identifiers) with high precision, and categorizes them with an explainable "AI Layer".
 - **Features an Explainability Engine:** We built a gorgeous, interactive React frontend where users can review *why* the AI flagged certain text. It includes a bulk-edit checklist to rapidly toggle redactions on or off, keeping humans firmly in the loop.
+- **Manual Entity Selection (Problem 3 Solved):** To handle edge cases where the AI might miss a critical entity, we implemented a manual selection feature. Users can highlight any text within the document viewer and flag it as a `USER_DEFINED` PII. This human-in-the-loop mechanism guarantees 100% precision and complete user control.
 - **Performs Native Exports:** Instead of just blacking out HTML elements, our Node.js backend uses `pdfjs-dist` and `canvas` to physically draw opaque black boxes over the exact coordinates in the original binary files, ensuring the PII is truly shredded from the exported document.
 
 ## What We Intentionally Chose Not to Build

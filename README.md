@@ -33,6 +33,7 @@ Judges, welcome to the Conseal repository! You can find all required submission 
 - **Multi-Format Support:** Instantly process raw text, multi-page PDFs, and images (PNG/JPG).
 - **Intelligent PII Detection:** Powered by advanced LLM inference (via Groq) to catch names, emails, financial data, and contextual PII that regex completely misses.
 - **Explainability Engine:** A beautiful side-panel UI that allows humans-in-the-loop to review *why* the AI flagged a specific word, complete with a bulk-edit checklist.
+- **Manual Entity Selection (Problem 3 Solved):** Users can manually highlight and flag any text they believe the AI missed. This seamlessly integrates with the explainability engine as a `USER_DEFINED` entity and is tracked along with AI findings.
 - **Native Redactions:** Exports true redactions. For PDFs, it draws black boxes over the exact coordinates of the PII. For images, it renders redaction pixels natively onto a canvas.
 - **Dark/Light Mode:** A gorgeous, glassmorphism UI tailored for comfortable, extended document review.
 

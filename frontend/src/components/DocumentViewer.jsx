@@ -6,9 +6,29 @@ import { API_BASE } from '../config';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-export default function DocumentViewer({ doc, loading, error, activeSpan, onSpanClick, previewMode, showAiOriginal, setShowAiOriginal }) {
+export default function DocumentViewer({ doc, loading, error, activeSpan, onSpanClick, previewMode, showAiOriginal, setShowAiOriginal, addManualEntity }) {
   const [numPages, setNumPages] = React.useState(null);
   const [viewMode, setViewMode] = React.useState('text'); // 'text' or 'pdf'
+
+  const handleMouseUp = async () => {
+    if (previewMode || !addManualEntity || !doc || !doc.plainTextDocument) return;
+    const selection = window.getSelection();
+    if (!selection.isCollapsed) {
+      const text = selection.toString().trim();
+      if (text.length > 2) {
+        // A simple hackathon approach: find the first occurrence of the selected text
+        const startIndex = doc.plainTextDocument.indexOf(text);
+        if (startIndex !== -1) {
+          const endIndex = startIndex + text.length;
+          // Prompt the user to confirm they want to add this
+          if (window.confirm(`Flag "${text}" as missed PII?`)) {
+            await addManualEntity(doc.documentId, text, startIndex, endIndex, null);
+            selection.removeAllRanges();
+          }
+        }
+      }
+    }
+  };
 
   const isPdf = doc && doc.sourceFilename && doc.sourceFilename.toLowerCase().endsWith('.pdf');
   const isImage = doc && doc.sourceFilename && (doc.sourceFilename.toLowerCase().endsWith('.png') || doc.sourceFilename.toLowerCase().endsWith('.jpg') || doc.sourceFilename.toLowerCase().endsWith('.jpeg'));
@@ -75,6 +95,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
             spanClass += 'pii-visible ';
           }
           if (entity.isModified) spanClass += 'is-modified ';
+          if (entity.entityType === 'USER_DEFINED') spanClass += 'pii-manual ';
           if (activeSpan && activeSpan.id === entity.id) spanClass += 'active ';
 
           elementContent = (
@@ -184,7 +205,7 @@ export default function DocumentViewer({ doc, loading, error, activeSpan, onSpan
         </div>
       )}
 
-      <div className="document-body">
+      <div className="document-body" onMouseUp={handleMouseUp}>
         {loading ? (
           <div className="ai-loading-state">
             <div className="pulse-ring"></div>

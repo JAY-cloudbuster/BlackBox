@@ -742,6 +742,7 @@ app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
 
     if (isPdf) {
       try {
+        const { PDFParse } = require('pdf-parse');
         const parser = new PDFParse({ data: req.file.buffer });
         const result = await parser.getText();
         cleanText = result.text;
@@ -871,6 +872,37 @@ app.post('/api/entities/:id/override', (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: true, code: 'internal_error', message: "Failed to save override." });
+  }
+});
+
+// POST /api/documents/:id/manual-entity
+app.post('/api/documents/:id/manual-entity', (req, res) => {
+  try {
+    const documentId = req.params.id;
+    const { text, startIndex, endIndex, boundingBoxes } = req.body;
+    const entityId = crypto.randomUUID();
+    
+    const newEntity = {
+      id: entityId,
+      text,
+      startIndex,
+      endIndex,
+      entityType: "USER_DEFINED",
+      layer: "critical",
+      confidenceScore: 100,
+      reasoning: "Manually added by human reviewer.",
+      defaultAction: "redact",
+      wasCalibrated: false,
+      boundingBoxes: boundingBoxes || null
+    };
+    
+    insertEntities(documentId, [newEntity]);
+    insertOverride(crypto.randomUUID(), entityId, 'redact');
+    
+    res.json({ success: true, entity: newEntity });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: true, code: 'internal_error', message: "Failed to add manual entity." });
   }
 });
 
